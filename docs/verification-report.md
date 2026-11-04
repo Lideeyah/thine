@@ -2,7 +2,7 @@
 
 Run 4 November 2026. All three checks completed. No mainnet transactions were sent, no keys were deleted anywhere, and no secrets are committed.
 
-**Headline: all three checks pass. Check 3 passes by a very large margin. The check 1 gas estimate in the brief does not hold — the real cost is about three times lower than estimated.**
+**Headline: all three checks pass. The check 1 gas estimate in the brief does not hold — the real cost is about three times lower than estimated. Check 3 passes, but its shape is not what the first version of this report claimed: the faucet grants 10 NEAR per request, not 10,000, and it is rate limited, so funding takes seven requests and consolidation rather than one request.**
 
 ---
 
@@ -182,44 +182,76 @@ Two things worth surfacing to the user rather than blocking on, since the migrat
 
 ---
 
-## Check 3: can we accumulate testnet NEAR — YES, trivially
+## Check 3: can we accumulate testnet NEAR — YES, but not in one request
 
-**This was the check that could have changed the whole plan. It does not. It passes with roughly 147× margin.**
+**This section was wrong in the first version of this report and has been corrected.** The original
+claimed the faucet grants 10,000 NEAR per request with no rate limit. Both halves were wrong: the
+grant is **10 NEAR**, and the faucet **is** rate limited. The error was a unit bug in the throwaway
+script used to read balances, which divided yoctoNEAR by 1e21 instead of 1e24 and so reported every
+balance 1,000x too high. The corrected figures below were measured with `thine fund` and confirmed
+directly against `view_account`.
 
-### What the faucet gives
+### What the faucet actually gives
 
-The docs publish no figures at all; they say only "a small amount". The real mechanism, measured:
+The docs publish no figures at all; they say only "a small amount". Measured:
 
 | | |
 |---|---|
 | Endpoint | `POST https://helper.testnet.near.org/account` |
 | Body | `{"newAccountId": "<name>.testnet", "newAccountPublicKey": "ed25519:<base58>"}` |
-| **Grant per request** | **10,000 testnet NEAR** |
+| **Grant per request** | **10 NEAR** (`10000000000000000000000000` yocto, verified by `view_account`) |
 | Creates the account? | Yes — it creates and funds a new named account |
 | Latency | ~2.7–3.7 s per request |
-| Rate limit observed | **none** across 4 back-to-back requests |
-| Requests needed for ~68 NEAR | **1** |
-| Consolidation needed | **No** |
+| **Rate limit** | **Approximately 10 requests per day.** The 11th returned `429 Too Many Requests: Rate limit exceeded, retry in 11 hours.` |
+| Consolidation | **Required.** Each grant lands in its own new account and must be swept. |
 
-All four requests returned HTTP 200 and a verified on-chain balance of exactly 10,000 NEAR. The brief's plan of hunting for a rate limit and consolidating balances across accounts is unnecessary — a single request covers the requirement 147 times over.
+### What that means for the ~68 NEAR requirement
+
+Publishing both contracts burns **67.882131 NEAR** (measured; see below). At 10 NEAR a request:
+
+- **7 faucet requests** are needed: the first becomes the relayer, and six more are swept in at
+  9.99 NEAR each after leaving dust for storage stake and transfer gas. 10 + 6 x 9.99 = 69.94 NEAR.
+- 7 is comfortably inside the observed daily allowance of roughly 10, so **this is reachable within
+  a single day's quota**.
+- Sweeping is a plain transfer rather than `DeleteAccount` with a beneficiary, which leaves about
+  0.01 NEAR per account behind. Recovering that dust is not worth performing an irreversible
+  account deletion for.
+
+### Where this actually stands right now
+
+The relayer `thine-1a1a75385a8.testnet` holds **59.95 NEAR** and needs 68.38 including publishing
+gas, so it is **8.43 NEAR short**. That is one more faucet request. The shortfall exists only
+because four of today's ten requests were spent on the verification work in this report before the
+grant size was known. The limit resets in about 11 hours.
+
+**So check 3 passes, with a correction to its shape rather than its answer.** The original brief
+asked whether 68 testnet NEAR is reachable and whether balances can be consolidated. They can, it
+takes seven requests rather than one, and consolidation is required rather than unnecessary. This
+does not force the fallback to a mainnet-only demo: nothing about the plan changes except that
+funding the relayer is a scripted step (`thine fund`) rather than a single call, and that the
+testnet publish waits for the next faucet window.
+
+Everything else can be built and proven in the meantime without the faucet, because
+`near-kit-sandbox` is a complete local network and all three measurements already run against it.
 
 ### The publish cost, measured rather than assumed
 
-I fetched the **exact bytes deployed on mainnet** via `view_global_contract_code_by_account_id` and published them into the sandbox to measure the real burn. Test: `crates/wallet/sdk/tests/thine_publish_cost.rs`; artefacts committed under `res/mainnet/`.
+I fetched the **exact bytes deployed on mainnet** via `view_global_contract_code_by_account_id` and
+published them into the sandbox to measure the real burn. Test:
+`crates/thine-bench/tests/thine_publish_cost.rs`; artefacts committed under `res/`.
 
-| Variant | Size | Gas | **Balance spent** | Predicted 10× burn | Multiplier |
+| Variant | Size | Gas | **Balance spent** | Predicted 10x burn | Multiplier |
 |---|---|---|---|---|---|
-| `wallet-no-sign` | 308,482 B | 24.50 TGas | **30.850628 NEAR** | 30.848200 | 10.001× |
-| `wallet-webauthn-p256` | 370,286 B | 29.25 TGas | **37.031503 NEAR** | 37.028600 | 10.001× |
+| `wallet-no-sign` | 308,482 B | 24.50 TGas | **30.850628 NEAR** | 30.848200 | 10.001x |
+| `wallet-webauthn-p256` | 370,286 B | 29.25 TGas | **37.031503 NEAR** | 37.028600 | 10.001x |
 | **Total** | 678,768 B | | **67.882131 NEAR** | | |
 
-This confirms the brief's 30.85 / 37.03 / ~68 NEAR figures to six decimal places, and confirms the 10× rate (size × 1e20 yoctoNEAR per byte).
+This confirms the brief's 30.85 / 37.03 / ~68 NEAR figures to six decimal places, and confirms the
+10x rate (size x 1e20 yoctoNEAR per byte).
 
-One mechanical detail worth knowing: the burn is levied inside `tokens_burnt`, **not** as refundable storage stake. The publisher's own `storage_usage` stays at 182 bytes. The NEAR is genuinely gone, which matches the brief's "not refundable".
-
-**Verdict: 68 testnet NEAR is reachable in one faucet request taking about three seconds. The fund-free judge path on testnet is viable. No decision from you is needed here.**
-
----
+One mechanical detail worth knowing: the burn is levied inside `tokens_burnt`, **not** as refundable
+storage stake. The publisher's own `storage_usage` stays at 182 bytes. The NEAR is genuinely gone,
+which matches the brief's "not refundable".
 
 ## Things that contradict the handover file
 
