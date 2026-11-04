@@ -113,8 +113,12 @@ async fn main() -> Result<()> {
     println!("  relayer  {}", relayer.account_id);
     println!("  http://{}", cli.listen);
     println!();
-    println!("Passkeys need a secure context. http://localhost and http://127.0.0.1 count;");
-    println!("another host over plain http does not, and the browser will refuse.");
+    println!("Open this on http://localhost:{}", cli.listen.port());
+    println!();
+    println!("Not on the IP address. A passkey needs a secure context, which plain http gives");
+    println!("only on loopback, but it also needs a relying party id, and an IP address cannot");
+    println!("be one: Chrome rejects 127.0.0.1 with \"This is an invalid domain.\" `localhost`");
+    println!("satisfies both. Anywhere else needs https.");
 
     let listener = tokio::net::TcpListener::bind(cli.listen)
         .await

@@ -136,6 +136,28 @@ five steps with the irreversible one marked. For an ordinary account, step 1 is 
 Add `--json` for the same thing as data. That is the shape the interface consumes, so the screen and
 the command line read one model.
 
+### Do this: run the interface and migrate an account yourself
+
+This is the only path that uses a real passkey, so it needs a device that has one.
+
+```bash
+docker run -d --name thine-sandbox -p 3030:3030 \
+    -e NEAR_ROOT_ACCOUNT=sandbox nearprotocol/sandbox:2.14.0
+cargo run -p thine-web --example setup_local
+cargo run -p thine-web --bin thine-web -- \
+    --rpc http://localhost:3030 --chain-id sandbox --account lydia.sandbox
+```
+
+Then open **http://localhost:8080**. Not the IP address: a passkey needs a secure context, which
+plain http gives only on loopback, but it also needs a relying party id, and an IP address cannot
+be one — Chrome rejects `127.0.0.1` with "This is an invalid domain". The page says so rather than
+letting that error through.
+
+**See this:** who can open `lydia.sandbox`, the five steps with the irreversible one marked, and
+four buttons. Working down them migrates the account: your own device is asked for a passkey twice
+per key, once to create its account and once to prove it, and the view updates after every step.
+The last button is refused until two passkeys have each proven themselves.
+
 ### Do this: check the measurements
 
 ```bash
@@ -149,7 +171,11 @@ building first; the contract artefacts are committed and checked against recorde
 cargo test --workspace
 ```
 
-**See this:** 43 tests passing: 39 unit tests that need no Docker, and the 4 sandbox tests above.
+**See this:** 63 tests passing. 49 of them are unit tests needing no Docker; the rest drive a
+sandbox, and include the whole migration twice over — once locally and once through the browser
+path, with every passkey signature going through the same DER and `clientDataJSON` conversions a
+real device's output does — plus the same migration again through the HTTP endpoints the page
+calls.
 
 ## Measurements
 
@@ -261,17 +287,19 @@ under, the total burn, and whether the relayer can cover it.
 
 Stated plainly, because the rest of this file is about what does work.
 
-- **Real browser passkeys are not wired up.** The passkey in every test is a software P-256 key
-  driven through NEAR's own `MockWalletWebauthnSigner`, which produces genuine WebAuthn assertions:
-  real `authenticator_data`, real `client_data_json`, a real P-256 signature over the correct
-  challenge. The contract verifies them exactly as it would a hardware authenticator's, so the
-  on-chain path is complete and measured. What is missing is the browser front end that asks a real
-  device for those assertions instead of generating them locally.
-- **Nothing is deployed on testnet yet.** `thine publish` exists and is tested against a sandbox,
-  but the faucet's daily allowance ran out partway through funding the relayer, which currently
-  holds 59.95 of the 68.38 NEAR needed.
-- **There is no hosted demo and no web interface.** The authority view exists as a model and as
-  `thine inspect --json`; the screen that renders it does not exist yet.
+- **No passkey signature from a real authenticator has been made yet.** The browser path is built
+  and tested end to end, but the last link is untested: every test replaces the authenticator with
+  a software P-256 key. Precisely what *is* verified: the DER-to-raw conversion and low-S
+  normalisation, against a real browser assertion from NEAR's own test vector; the whole migration
+  through the real HTTP endpoints; and that Chrome accepts the `navigator.credentials.create` call
+  on `localhost` and proceeds to wait for a device. What has not happened is a human touching one.
+- **Nothing is deployed on testnet yet.** `thine publish` is tested against a sandbox and
+  `--dry-run` confirms both artefacts against mainnet, but the faucet's daily allowance ran out
+  partway through funding the relayer, which holds 59.95 of the 68.38 NEAR needed.
+- **There is no hosted demo.** The interface runs locally against a sandbox; nothing is deployed
+  for someone else to open.
+- **The interface is unstyled on purpose.** `crates/thine-web/static/index.html` is structure and
+  behaviour only. Every visual decision belongs to the designer and none is made there.
 - **No mainnet deployment.** Nothing in this repository has sent a mainnet transaction.
 
 ## After the hackathon
@@ -322,6 +350,7 @@ another.
 ```
 crates/thine-core     the model: authority, plan, preconditions, refusals, chain reads
 crates/thine-cli      the thine command: faucet, fund, publish, inspect
+crates/thine-web      the server, the endpoints a browser needs, and the page
 crates/thine-bench    the measurements, as committed tests
 contracts/thine-probe a near-sdk contract used only to set up test states
 res/                  the wallet contract artefacts, digest-checked on load

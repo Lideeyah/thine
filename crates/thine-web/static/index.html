@@ -199,6 +199,14 @@ async function addPasskey() {
   if (!window.PublicKeyCredential) {
     throw new Error('This browser has no WebAuthn. A passkey needs it.');
   }
+  // An IP address is a secure context but is not a registrable domain, so it
+  // cannot be a WebAuthn relying party id. Chrome rejects it with the
+  // unhelpful "This is an invalid domain." Say what to do instead.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(location.hostname) || location.hostname.includes(':')) {
+    throw new Error(
+      `Passkeys will not work on ${location.hostname}: an IP address cannot be a WebAuthn ` +
+      `relying party. Open this page on http://localhost:${location.port} instead.`);
+  }
 
   const created = await navigator.credentials.create({
     publicKey: {
