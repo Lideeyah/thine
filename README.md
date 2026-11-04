@@ -54,6 +54,22 @@ Three refusals, each one a hard stop that sends nothing:
   evidence that anyone can still sign with a passkey, and one passkey is a single point of failure
   once the seed phrase is gone. The proofs are re-read from the chain, not from local state.
 
+## A bug worth recording
+
+The first end-to-end run saw one of two authorised passkeys. Both transactions had succeeded — the
+contract's own event logs showed both `extension_added` events — but the typed contract client
+returns as soon as a call has executed, which is not the same as final, and the next read at final
+finality was a block behind. So the view showed the state from before the user's own action.
+
+For a tool whose entire job is telling someone who can open their account, that is close to the
+worst failure available: it would have reported a step as not taken when it had been, or shown a
+passkey as missing when it was authorised. Every step now waits for finality before returning, and
+the end-to-end test is what found it.
+
+It is recorded here rather than only in the git history because the measurements in this repository
+are worth no more than the method behind them, and this is a case where the method caught something
+that reasoning about the code had not.
+
 ## Try it
 
 Everything below runs against a local NEAR sandbox. No wallet, no funds, no faucet, no account.
@@ -202,6 +218,20 @@ On testnet this is funded from the faucet, which grants 10 NEAR per request and 
 requests a day. `thine fund` scripts the seven requests and the consolidation. NEAR's docs publish
 neither figure.
 
+Publishing the pair therefore costs most of a day's faucet allowance, and a code hash reference is
+immutable, so a wrong byte cannot be corrected in place — it can only be abandoned and paid for
+again, at another 68 NEAR and another day. `thine publish` treats that as a hard precondition rather
+than a matter of care: it refuses unless each artefact matches the digest recorded in the source
+**and** is byte-for-byte identical to what NEAR mainnet currently serves. `thine publish --dry-run`
+runs every check, prints the code hashes and the burn, and sends nothing.
+
+```bash
+cargo run -p thine-cli -- publish --dry-run
+```
+
+**See this:** both artefacts confirmed against mainnet, the two code hashes they would be published
+under, the total burn, and whether the relayer can cover it.
+
 ## NEAR features used
 
 - **NEP-591 global contracts.** Both wallet contracts are published by code hash and referenced with
@@ -280,6 +310,9 @@ another.
 - **`contracts/thine-probe`** is ours, and exists only to put test accounts into the three
   pre-migration states. It is not part of the product.
 - **No existing product on another chain.** Thine has no prior version anywhere.
+- **Second entry.** The same author is entering a second, independent project,
+  **Lyco**, at [github.com/Lideeyah/lyco](https://github.com/Lideeyah/lyco). The two share no code
+  and no infrastructure. Lyco's README names this project in return.
 - **Corrections.** `docs/verification-report.md` records the measurements and, where an earlier
   figure was wrong, says so and why. The testnet faucet figures were wrong in the first version of
   that document and are corrected there.
