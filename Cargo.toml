@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/thine-core", "crates/thine-bench", "crates/thine-cli"]
+members = ["crates/thine-core", "crates/thine-bench", "crates/thine-cli", "crates/thine-web"]
 
 [workspace.package]
 edition = "2024"
@@ -23,6 +23,7 @@ near-kit = { version = "0.20.1", default-features = false, features = ["contract
 near-kit-sandbox = "0.20.1"
 
 anyhow = "1"
+axum = "0.8"
 base64 = "0.22"
 bs58 = "0.5"
 hex-literal = "1"

@@ -256,10 +256,14 @@ pub enum Refusal {
     )]
     EmptyStateKeyOccupied { bytes: usize },
 
+    // Phrased against the requirement rather than against what has been
+    // added. An earlier version said "{proven} of {added}", which read as
+    // "1 of 1" when one passkey had been added and proven, and so looked
+    // complete at exactly the moment it was not.
     #[error(
-        "{proven} of {added} passkeys have proven they can sign; {required} are required before \
-         any key is deleted. Adding a passkey is not evidence that anyone can still use it: each \
-         must complete a w_execute_signed of its own."
+        "only {proven} of the {required} required passkeys have proven they can sign ({added} \
+         added so far). Adding a passkey is not evidence that anyone can still use it: each must \
+         complete a w_execute_signed of its own."
     )]
     NotEnoughProvenPasskeys {
         proven: usize,

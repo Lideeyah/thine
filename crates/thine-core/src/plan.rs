@@ -318,7 +318,7 @@ mod tests {
         let last = plan.irreversible_step();
         assert_eq!(last.state, StepState::Blocked);
         let reason = last.blocked_by.as_deref().expect("should say why");
-        assert!(reason.contains("1 of 2"), "{reason}");
+        assert!(reason.contains("1 of the 2 required"), "{reason}");
     }
 
     #[test]

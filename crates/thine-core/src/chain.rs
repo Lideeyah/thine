@@ -89,8 +89,21 @@ impl Chain {
                 balance_yocto: v.amount.as_yoctonear(),
             }),
             Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("does not exist") || msg.contains("UNKNOWN_ACCOUNT") {
+                // An account that does not exist yet is the ordinary case, not
+                // an error: every passkey address is read before it is created.
+                //
+                // Which error means that is decided by a typed existence query
+                // rather than by matching on the message. An earlier version
+                // matched the text, and missed it: the sandbox says "Account
+                // not found" where the pattern expected "does not exist", so a
+                // freshly derived address came back as a 500 instead of as
+                // `exists: false`.
+                if !self
+                    .near
+                    .account_exists(account_id.clone())
+                    .await
+                    .unwrap_or(false)
+                {
                     Ok(AccountFacts {
                         account_id: account_id.to_string(),
                         exists: false,
@@ -100,7 +113,7 @@ impl Chain {
                         balance_yocto: 0,
                     })
                 } else {
-                    Err(anyhow!("view_account {account_id}: {msg}"))
+                    Err(anyhow!("view_account {account_id}: {e}"))
                 }
             }
         }

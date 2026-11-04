@@ -427,7 +427,10 @@ mod tests {
         let refusal = &v["summary"]["key_deletion_refusal"];
         assert_eq!(refusal["code"], "not_enough_proven_passkeys");
         assert!(
-            refusal["message"].as_str().unwrap().contains("1 of 2"),
+            refusal["message"]
+                .as_str()
+                .unwrap()
+                .contains("1 of the 2 required"),
             "{refusal}"
         );
     }
