@@ -32,6 +32,7 @@ pub mod plan;
 pub mod precondition;
 pub mod proof;
 pub mod view;
+pub mod webauthn;
 
 pub use artifacts::Variant;
 pub use authority::{
