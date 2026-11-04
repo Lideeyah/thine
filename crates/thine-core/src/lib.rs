@@ -26,14 +26,18 @@
 
 pub mod artifacts;
 pub mod authority;
+pub mod chain;
 pub mod precondition;
+pub mod proof;
 
 pub use artifacts::Variant;
 pub use authority::{
     AuthorityView, Holder, HolderKind, HolderStatus, MIN_PROVEN_PASSKEYS, OrphanedStorage, Refusal,
     Stage,
 };
+pub use chain::{AccountFacts, Chain, WalletProbe};
 pub use precondition::{StateRecord, StateSnapshot};
+pub use proof::{ProofLedger, ProofRecord};
 
 /// Ordinary storage staking rate: 1e19 yoctoNEAR per byte.
 pub const STORAGE_COST_PER_BYTE: u128 = 10_000_000_000_000_000_000;
