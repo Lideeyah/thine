@@ -28,6 +28,7 @@ pub mod artifacts;
 pub mod authority;
 pub mod chain;
 pub mod migration;
+pub mod plan;
 pub mod precondition;
 pub mod proof;
 
@@ -37,6 +38,7 @@ pub use authority::{
     Stage,
 };
 pub use chain::{AccountFacts, Chain, WalletProbe};
+pub use plan::{Plan, Step, StepState};
 pub use precondition::{StateRecord, StateSnapshot};
 pub use proof::{ProofLedger, ProofRecord};
 

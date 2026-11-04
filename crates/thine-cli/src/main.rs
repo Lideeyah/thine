@@ -12,7 +12,7 @@ mod state;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use near_kit::AccountId;
-use thine_core::{Chain, ProofLedger};
+use thine_core::{Chain, Plan, ProofLedger};
 
 #[derive(Parser)]
 #[command(
@@ -145,10 +145,22 @@ async fn main() -> Result<()> {
                 .await
                 .with_context(|| format!("could not read authority for {account_id}"))?;
 
+            let plan = Plan::of(&view);
+
             if *json {
-                println!("{}", serde_json::to_string_pretty(&view)?);
+                // Both halves of what the screen needs: who can open the
+                // account, and where in the migration it is.
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "network": cli.network.as_str(),
+                        "authority": view,
+                        "plan": plan,
+                    }))?
+                );
             } else {
                 print!("{}", render::authority(&view, cli.network.as_str()));
+                print!("{}", render::plan(&plan));
             }
             Ok(())
         }

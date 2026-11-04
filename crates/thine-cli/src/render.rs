@@ -11,6 +11,7 @@ use thine_core::{
     MIN_PROVEN_PASSKEYS, STORAGE_COST_PER_BYTE,
     authority::{AuthorityView, HolderStatus, Stage},
     near_of,
+    plan::{Plan, StepState},
 };
 
 pub fn authority(view: &AuthorityView, network: &str) -> String {
@@ -220,4 +221,41 @@ mod tests {
         assert!(out.contains("[      NO]"), "{out}");
         assert!(out.contains("account does not exist"), "{out}");
     }
+}
+
+/// The migration sequence, with the irreversible step marked where it falls.
+pub fn plan(plan: &Plan) -> String {
+    let mut out = String::from("\nThe migration\n");
+
+    for (i, step) in plan.steps.iter().enumerate() {
+        let mark = match step.state {
+            StepState::Done => "done",
+            StepState::Current => "NOW",
+            StepState::Blocked => "blocked",
+            StepState::Pending => "",
+        };
+        let progress = match step.progress {
+            Some((done, needed)) => format!(" ({done} of {needed})"),
+            None => String::new(),
+        };
+        out.push_str(&format!(
+            "  {}. [{mark:>7}]  {}{progress}{}\n",
+            i + 1,
+            step.title,
+            if step.irreversible {
+                "   <- cannot be undone"
+            } else {
+                ""
+            }
+        ));
+        out.push_str(&format!("                 {}\n", step.effect));
+        if let Some(reason) = &step.blocked_by {
+            out.push_str(&format!("                 blocked: {reason}\n"));
+        }
+    }
+
+    if plan.complete {
+        out.push_str("\n  Migration complete.\n");
+    }
+    out
 }
