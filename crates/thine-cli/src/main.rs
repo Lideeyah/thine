@@ -86,9 +86,23 @@ enum Command {
     /// reference is immutable: it is the only way back into a migrated account,
     /// and it should not be something anyone can redeploy.
     Publish {
+        /// Run every check and report what would happen, sending nothing.
+        ///
+        /// Publishing costs 67.88 NEAR and cannot be undone, so this exists to
+        /// be run first.
+        #[arg(long)]
+        dry_run: bool,
+
         /// Publish even if a record already exists for this network.
         #[arg(long)]
         force: bool,
+
+        /// Skip the check that the artefacts match what mainnet serves.
+        ///
+        /// Only for working offline. Publishing bytes that are not NEAR's own
+        /// wallet contracts would produce a code hash nothing else references.
+        #[arg(long)]
+        skip_mainnet_check: bool,
     },
 
     /// Show who can currently open an account.
@@ -126,8 +140,19 @@ async fn main() -> Result<()> {
             fund::run(&cli.state_dir, *max_requests).await
         }
 
-        Command::Publish { force } => {
-            publish::run(cli.network.as_str(), &cli.state_dir, *force).await
+        Command::Publish {
+            dry_run,
+            force,
+            skip_mainnet_check,
+        } => {
+            publish::run(
+                cli.network.as_str(),
+                &cli.state_dir,
+                *force,
+                *dry_run,
+                *skip_mainnet_check,
+            )
+            .await
         }
 
         Command::Inspect { account_id, json } => {

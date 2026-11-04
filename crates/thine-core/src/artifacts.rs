@@ -74,6 +74,23 @@ impl Variant {
         self.size_bytes() as u128 * 10_000_000_000_000_000_000 * 10
     }
 
+    /// The account that serves this contract as a global contract on NEAR
+    /// mainnet, for the two variants that are NEAR's rather than ours.
+    ///
+    /// These are global-deployer instances: `UseGlobalContract` with the
+    /// account id resolves to the wallet WASM. The same bytes are **not**
+    /// available by code hash on mainnet — `view_global_contract_code` for
+    /// either digest returns `NO_GLOBAL_CONTRACT_CODE` — so this account id is
+    /// the only on-chain reference to compare against.
+    pub const fn mainnet_reference(self) -> Option<&'static str> {
+        match self {
+            Self::NoSign => Some("0sfa7a4d20c9b28a23fcd85930593ed3974c3fb38e"),
+            Self::WebauthnP256 => Some("0saf343be226341c0eca7dba6d0b29d49bdff3ad03"),
+            // Ours. Nothing on mainnet to compare it to.
+            Self::Probe => None,
+        }
+    }
+
     /// Every artefact this crate knows about.
     pub const ALL: [Self; 3] = [Self::NoSign, Self::WebauthnP256, Self::Probe];
 }
@@ -154,6 +171,16 @@ mod tests {
                 variant.file_name()
             );
         }
+    }
+
+    #[test]
+    fn both_wallet_variants_have_a_mainnet_reference_to_check_against() {
+        assert!(Variant::NoSign.mainnet_reference().is_some());
+        assert!(Variant::WebauthnP256.mainnet_reference().is_some());
+        assert!(
+            Variant::Probe.mainnet_reference().is_none(),
+            "the probe is ours; there is nothing on mainnet to compare it to"
+        );
     }
 
     #[test]

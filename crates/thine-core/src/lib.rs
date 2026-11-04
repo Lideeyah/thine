@@ -73,3 +73,30 @@ pub fn now_rfc3339() -> String {
         rem % 60
     )
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_timestamp_is_a_plausible_rfc3339_instant() {
+        let s = super::now_rfc3339();
+        assert_eq!(s.len(), 20, "{s}");
+        assert!(s.ends_with('Z'), "{s}");
+        let year: i32 = s[..4].parse().expect("year");
+        assert!((2026..2100).contains(&year), "{s}");
+        assert_eq!(&s[4..5], "-");
+        assert_eq!(&s[10..11], "T");
+    }
+
+    #[test]
+    fn near_of_converts_yocto_at_the_right_scale() {
+        // The faucet grant, which an earlier measuring script got wrong by a
+        // factor of a thousand by dividing at 1e21 instead of 1e24. Compared
+        // with a tolerance: 1e25 / 1e24 is 10.000000000000002 in f64, not 10,
+        // which is why this conversion is for display only and every amount
+        // that has to be exact stays in yoctoNEAR as a u128.
+        assert!((super::near_of(10_000_000_000_000_000_000_000_000) - 10.0).abs() < 1e-9);
+        assert!((super::near_of(super::STORAGE_COST_PER_BYTE) - 1e-5).abs() < 1e-18);
+        // The scale that matters: a thousand times off would show 10,000.
+        assert!(super::near_of(10_000_000_000_000_000_000_000_000) < 11.0);
+    }
+}

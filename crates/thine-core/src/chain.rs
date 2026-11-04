@@ -186,6 +186,21 @@ impl Chain {
             .collect())
     }
 
+    /// Fetch the WASM a global contract account serves.
+    ///
+    /// Used to check the artefacts about to be published against the bytes the
+    /// live network runs, before anything irreversible happens.
+    pub async fn global_contract_code(&self, account_id: &AccountId) -> Result<Vec<u8>> {
+        Ok(self
+            .near
+            .global_contract(account_id.clone())
+            .await
+            .with_context(|| {
+                format!("fetching the global contract served by {account_id} on {}", self.network)
+            })?
+            .code)
+    }
+
     /// Re-verify a recorded proof against the chain.
     ///
     /// A proof counts only if the transaction it names really exists, really
