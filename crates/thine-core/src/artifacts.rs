@@ -170,8 +170,9 @@ mod tests {
             37_028_600_000_000_000_000_000_000
         );
 
-        // The pair, which is what a testnet deployment of Thine costs. One
-        // faucet request grants 10,000 NEAR, so this is reachable in one.
+        // The pair, which is what a testnet deployment of Thine costs. The
+        // testnet faucet grants 10 NEAR per request, measured, so reaching
+        // this takes eight requests and consolidation into one account.
         let total = Variant::NoSign.publish_burn_yocto() + Variant::WebauthnP256.publish_burn_yocto();
         assert_eq!(total, 67_876_800_000_000_000_000_000_000);
     }

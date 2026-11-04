@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/thine-core", "crates/thine-bench"]
+members = ["crates/thine-core", "crates/thine-bench", "crates/thine-cli"]
 
 [workspace.package]
 edition = "2024"
@@ -28,3 +28,6 @@ serde_json = "1"
 sha2 = "0.10"
 rand = { version = "0.10.2", features = ["sys_rng"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+clap = { version = "4", features = ["derive"] }
+# rustls rather than native-tls so a clean checkout needs no system OpenSSL.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
