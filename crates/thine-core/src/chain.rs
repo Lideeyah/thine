@@ -106,6 +106,48 @@ impl Chain {
         }
     }
 
+    /// Every contract state record on the account, with the block it was read
+    /// at.
+    ///
+    /// The block matters: the interface re-reads between every step, and a read
+    /// taken a block early would show the state from before the user's own
+    /// action.
+    pub async fn state_snapshot_at(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<(StateSnapshot, crate::view::ReadAt)> {
+        let result = self
+            .near
+            .rpc()
+            .view_state_all(
+                account_id,
+                b"",
+                0,
+                BlockReference::Finality(Finality::Final),
+            )
+            .await
+            .with_context(|| format!("view_state {account_id}"))?;
+
+        let read_at = crate::view::ReadAt {
+            block_height: result.block_height,
+            block_hash: result.block_hash.to_string(),
+        };
+
+        Ok((
+            StateSnapshot::new(
+                result
+                    .into_values()
+                    .into_iter()
+                    .map(|item| StateRecord {
+                        key: item.key,
+                        value_len: item.value.len(),
+                    })
+                    .collect(),
+            ),
+            read_at,
+        ))
+    }
+
     /// Every contract state record on the account.
     ///
     /// This is the `view_state` query with an empty prefix that the migration
@@ -368,6 +410,32 @@ impl Chain {
             holders,
             orphaned: snapshot.orphaned(),
         })
+    }
+}
+
+impl Chain {
+    /// Everything the interface needs for one account, in the frozen shape.
+    pub async fn account_report(
+        &self,
+        account_id: &AccountId,
+        ledger: &ProofLedger,
+    ) -> Result<crate::view::AccountReport> {
+        let facts = self.account_facts(account_id).await?;
+        if !facts.exists {
+            return Err(anyhow!(
+                "account {account_id} does not exist on {}",
+                self.network
+            ));
+        }
+        let (_, read_at) = self.state_snapshot_at(account_id).await?;
+        let authority = self.authority_view(account_id, ledger).await?;
+
+        Ok(crate::view::AccountReport::assemble(
+            self.network,
+            read_at,
+            &facts,
+            authority,
+        ))
     }
 }
 

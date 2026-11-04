@@ -283,6 +283,22 @@ pub enum Refusal {
     WrongStage { stage: Stage },
 }
 
+impl Refusal {
+    /// A stable identifier for this refusal.
+    ///
+    /// The interface branches on this. The message is free to be reworded; this
+    /// is not, and renaming one is a breaking change to the view contract.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::EmptyStateKeyOccupied { .. } => "empty_state_key_occupied",
+            Self::NotEnoughProvenPasskeys { .. } => "not_enough_proven_passkeys",
+            Self::ExtensionNotLive { .. } => "extension_not_live",
+            Self::UnreachableExtensions { .. } => "unreachable_extensions",
+            Self::WrongStage { .. } => "wrong_stage",
+        }
+    }
+}
+
 fn abbreviate(key: &str) -> String {
     // "ed25519:ABCDEF...WXYZ" -> "ed25519:ABCD…WXYZ"
     match key.split_once(':') {

@@ -31,6 +31,7 @@ pub mod migration;
 pub mod plan;
 pub mod precondition;
 pub mod proof;
+pub mod view;
 
 pub use artifacts::Variant;
 pub use authority::{
@@ -41,6 +42,7 @@ pub use chain::{AccountFacts, Chain, WalletProbe};
 pub use plan::{Plan, Step, StepState};
 pub use precondition::{StateRecord, StateSnapshot};
 pub use proof::{ProofLedger, ProofRecord};
+pub use view::{AccountReport, Amount, VIEW_SCHEMA_VERSION};
 
 /// Ordinary storage staking rate: 1e19 yoctoNEAR per byte.
 pub const STORAGE_COST_PER_BYTE: u128 = 10_000_000_000_000_000_000;

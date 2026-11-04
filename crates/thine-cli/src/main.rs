@@ -165,25 +165,20 @@ async fn main() -> Result<()> {
                 account_id.as_str(),
             );
 
-            let view = chain
-                .authority_view(&account_id, &ledger)
-                .await
-                .with_context(|| format!("could not read authority for {account_id}"))?;
-
-            let plan = Plan::of(&view);
-
             if *json {
-                // Both halves of what the screen needs: who can open the
-                // account, and where in the migration it is.
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "network": cli.network.as_str(),
-                        "authority": view,
-                        "plan": plan,
-                    }))?
-                );
+                // The frozen contract the interface consumes. See
+                // thine_core::view; its shape is pinned by a test.
+                let report = chain
+                    .account_report(&account_id, &ledger)
+                    .await
+                    .with_context(|| format!("could not read {account_id}"))?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
+                let view = chain
+                    .authority_view(&account_id, &ledger)
+                    .await
+                    .with_context(|| format!("could not read authority for {account_id}"))?;
+                let plan = Plan::of(&view);
                 print!("{}", render::authority(&view, cli.network.as_str()));
                 print!("{}", render::plan(&plan));
             }
