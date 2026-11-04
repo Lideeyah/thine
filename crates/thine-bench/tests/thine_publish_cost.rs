@@ -35,7 +35,12 @@ async fn publish_cost_by_code_hash() {
     ] {
         let size = wasm.len();
         let hash: [u8; 32] = Sha256::digest(wasm).into();
-        let before = near.account(me.clone()).await.unwrap().amount.as_yoctonear();
+        let before = near
+            .account(me.clone())
+            .await
+            .unwrap()
+            .amount
+            .as_yoctonear();
 
         let out = near
             .publish(wasm.clone(), PublishMode::Immutable)
@@ -44,7 +49,12 @@ async fn publish_cost_by_code_hash() {
             .expect("publish send failed");
         assert!(out.is_success(), "publish failed: {:?}", out.status);
 
-        let after = near.account(me.clone()).await.unwrap().amount.as_yoctonear();
+        let after = near
+            .account(me.clone())
+            .await
+            .unwrap()
+            .amount
+            .as_yoctonear();
         let spent = before - after;
         let gas = out.total_gas_used().as_gas();
         let tokens_for_gas: u128 = out.transaction_outcome.outcome.tokens_burnt.as_yoctonear()

@@ -190,10 +190,7 @@ impl AccountReport {
             passkeys_required: MIN_PROVEN_PASSKEYS,
             survives_key_deletion: authority.survives_key_deletion(),
             has_full_access_key: authority.has_full_access_key(),
-            unreachable: authority
-                .unreachable()
-                .map(|h| h.kind.label())
-                .collect(),
+            unreachable: authority.unreachable().map(|h| h.kind.label()).collect(),
             key_deletion_refusal: refusal.as_ref().map(RefusalInfo::from),
         };
 
@@ -286,7 +283,10 @@ mod tests {
     fn authority() -> AuthorityView {
         AuthorityView {
             account_id: "lydia.testnet".to_string(),
-            stage: Stage::PasskeysAdded { added: 2, proven: 1 },
+            stage: Stage::PasskeysAdded {
+                added: 2,
+                proven: 1,
+            },
             holders: vec![
                 Holder {
                     kind: HolderKind::FullAccessKey {

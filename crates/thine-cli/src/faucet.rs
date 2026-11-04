@@ -77,7 +77,10 @@ pub async fn run(prefix: &str, state_dir: &std::path::Path) -> Result<()> {
 
     println!("\nrelayer   {account_id}");
     println!("balance   {:.4} NEAR", near_of(balance));
-    println!("saved to  {}", Relayer::path(state_dir, "testnet").display());
+    println!(
+        "saved to  {}",
+        Relayer::path(state_dir, "testnet").display()
+    );
     println!("\nThat file holds a private key. It is gitignored; keep it that way.");
 
     let needed = thine_core::Variant::NoSign.publish_burn_yocto()

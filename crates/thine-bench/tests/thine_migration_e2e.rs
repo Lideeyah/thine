@@ -34,8 +34,7 @@ use near_kit_sandbox::SandboxConfig;
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use sha2::{Digest, Sha256};
 use thine_core::{
-    Chain, ProofLedger, Variant,
-    artifacts,
+    Chain, ProofLedger, Variant, artifacts,
     authority::{HolderKind, HolderStatus, Refusal, Stage},
     migration::{Migration, PasskeyWallet},
     near_of,
@@ -98,11 +97,7 @@ async fn the_whole_migration_and_every_refusal() {
     println!("refused: {refusal}");
     // The account is untouched: still its own contract.
     assert!(
-        chain
-            .account_facts(&blocked_id)
-            .await
-            .unwrap()
-            .has_code,
+        chain.account_facts(&blocked_id).await.unwrap().has_code,
         "the blocked account should still carry its original contract"
     );
 
@@ -119,11 +114,19 @@ async fn the_whole_migration_and_every_refusal() {
     assert_eq!(before.stage, Stage::SeedControlled);
     assert!(before.has_full_access_key());
     assert!(!before.survives_key_deletion());
-    println!("start: {:?}, {} holder(s)", before.stage, before.holders.len());
+    println!(
+        "start: {:?}, {} holder(s)",
+        before.stage,
+        before.holders.len()
+    );
 
     // --- step 1 ---
     let s1 = m.step1_become_wallet(&user_client).await.expect("step 1");
-    println!("step 1: {:.4} TGas, {:.6} NEAR", s1.tgas(), near_of(s1.near_burnt));
+    println!(
+        "step 1: {:.4} TGas, {:.6} NEAR",
+        s1.tgas(),
+        near_of(s1.near_burnt)
+    );
     let v = chain.authority_view(&user_id, &ledger).await.unwrap();
     assert_eq!(v.stage, Stage::WalletDeployed);
     assert!(
@@ -141,7 +144,9 @@ async fn the_whole_migration_and_every_refusal() {
     // Refusal 2: an extension that is not a live wallet is refused.
     // ===============================================================
     println!("\n--- refusal 2: the extension is not a live wallet ---");
-    let ghost: AccountId = "0sdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".parse().unwrap();
+    let ghost: AccountId = "0sdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        .parse()
+        .unwrap();
     let err = m
         .step3_add_extension(&user_client, &ghost)
         .await
@@ -176,7 +181,10 @@ async fn the_whole_migration_and_every_refusal() {
             "step 2{label}: {account} exists, {} bytes of storage",
             facts.storage_usage
         );
-        assert!(facts.storage_usage <= 770, "must stay a zero-balance account");
+        assert!(
+            facts.storage_usage <= 770,
+            "must stay a zero-balance account"
+        );
 
         let s3 = m
             .step3_add_extension(&user_client, &account)
@@ -199,7 +207,13 @@ async fn the_whole_migration_and_every_refusal() {
     // ===============================================================
     println!("\n--- refusal 3: two passkeys added, neither has signed ---");
     let v = chain.authority_view(&user_id, &ledger).await.unwrap();
-    assert_eq!(v.stage, Stage::PasskeysAdded { added: 2, proven: 0 });
+    assert_eq!(
+        v.stage,
+        Stage::PasskeysAdded {
+            added: 2,
+            proven: 0
+        }
+    );
     assert_eq!(v.passkeys().count(), 2, "both are present");
     assert_eq!(v.independent_proven_count(), 0, "neither has signed");
     assert!(v.passkeys().all(|h| h.status == HolderStatus::Live));
@@ -212,7 +226,11 @@ async fn the_whole_migration_and_every_refusal() {
     assert!(
         matches!(
             refusal,
-            Refusal::NotEnoughProvenPasskeys { proven: 0, required: 2, .. }
+            Refusal::NotEnoughProvenPasskeys {
+                proven: 0,
+                required: 2,
+                ..
+            }
         ),
         "got {refusal:?}"
     );
@@ -247,7 +265,11 @@ async fn the_whole_migration_and_every_refusal() {
     assert!(
         matches!(
             refusal,
-            Refusal::NotEnoughProvenPasskeys { proven: 1, required: 2, .. }
+            Refusal::NotEnoughProvenPasskeys {
+                proven: 1,
+                required: 2,
+                ..
+            }
         ),
         "got {refusal:?}"
     );

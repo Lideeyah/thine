@@ -98,8 +98,11 @@ pub async fn run(
     dry_run: bool,
     skip_mainnet_check: bool,
 ) -> Result<()> {
-    if let Ok(existing) = PublishedContracts::load(state_dir, network) {
-        if !force && !dry_run {
+    if let Ok(existing) = PublishedContracts::load(state_dir, network)
+        && !force
+        && !dry_run
+    {
+        {
             println!("already published on {network}:");
             println!("  wallet-no-sign        {}", existing.no_sign);
             println!("  wallet-webauthn-p256  {}", existing.webauthn_p256);
@@ -124,10 +127,7 @@ pub async fn run(
     }
     let checked = check_bytes(!skip_mainnet_check).await?;
 
-    let required: u128 = checked
-        .iter()
-        .map(|c| c.variant.publish_burn_yocto())
-        .sum();
+    let required: u128 = checked.iter().map(|c| c.variant.publish_burn_yocto()).sum();
 
     // Dry run stops here, having done every check and sent nothing.
     if dry_run {

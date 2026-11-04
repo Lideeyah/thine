@@ -89,8 +89,8 @@ async fn fresh_account(root: &Near, label: &str) -> (AccountId, Near) {
         .result()
         .expect("create_account failed");
 
-    let signer = InMemorySigner::new(id.clone(), secret.to_string())
-        .expect("failed to build signer");
+    let signer =
+        InMemorySigner::new(id.clone(), secret.to_string()).expect("failed to build signer");
     (id.clone(), root.with_signer(signer))
 }
 

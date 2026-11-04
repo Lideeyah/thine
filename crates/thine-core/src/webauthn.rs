@@ -66,7 +66,7 @@ pub fn compressed_public_key(bytes: &[u8]) -> Result<P256CompressedPublicKey> {
     };
 
     ensure!(
-        matches!(point.first(), Some(0x02 | 0x03 | 0x04)),
+        matches!(point.first(), Some(0x02..=0x04)),
         "not a SEC1 point: first byte is {:?}, expected 0x02, 0x03 or 0x04",
         point.first()
     );
@@ -192,13 +192,7 @@ mod tests {
 
     fn fixture_message() -> RequestMessage {
         RequestMessage {
-            pay_for_gas: false,
-            chain_id: "mainnet".to_string(),
-            signer_id: "0se5eba21e8f191e1880e453794bc551dfa50a3419".parse().unwrap(),
-            nonce: 2845491008,
-            created_at: "2026-07-07T11:13:29Z".parse().unwrap(),
-            timeout: Duration::from_secs(3600),
-            request: NearPromise::new("v1.signer".parse::<AccountId>().unwrap())
+            pay_for_gas: false, chain_id: "mainnet".to_string(), signer_id: "0se5eba21e8f191e1880e453794bc551dfa50a3419".parse().unwrap(), nonce: 2845491008, created_at: "2026-07-07T11:13:29Z".parse().unwrap(), timeout: Duration::from_secs(3600), request: NearPromise::new("v1.signer".parse::<AccountId>().unwrap())
                 .function_call(
                     FunctionCall::name("sign")
                         .args(hex_literal::hex!("7b2272657175657374223a7b227061796c6f61645f7632223a7b224563647361223a2230303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030227d2c22646f6d61696e5f6964223a302c2270617468223a22227d7d"))
@@ -270,10 +264,16 @@ mod tests {
             (-*low.s()).to_bytes(), // n - s, the other valid form
         )
         .unwrap();
-        assert!(bool::from(high.s().is_high()), "the test input must be high-S");
+        assert!(
+            bool::from(high.s().is_high()),
+            "the test input must be high-S"
+        );
 
         let normalised = normalised_signature(high.to_der().as_bytes()).unwrap();
-        assert!(!bool::from(normalised.s().is_high()), "must come back low-S");
+        assert!(
+            !bool::from(normalised.s().is_high()),
+            "must come back low-S"
+        );
         assert_eq!(normalised, low, "and must be the same signature");
 
         // And it verifies, where the high-S form would not have.
@@ -392,8 +392,11 @@ mod tests {
         let auth_data = fixture_auth_data();
 
         // What the authenticator signs: authData || SHA256(clientDataJSON).
-        let signed_over =
-            [auth_data.as_slice(), Sha256::digest(client_data.as_bytes()).as_ref()].concat();
+        let signed_over = [
+            auth_data.as_slice(),
+            Sha256::digest(client_data.as_bytes()).as_ref(),
+        ]
+        .concat();
         let signature: Signature = signing.sign(&signed_over);
 
         let proof = proof_from_browser(
@@ -407,9 +410,85 @@ mod tests {
         .unwrap();
 
         let public_key =
-            compressed_public_key(signing.verifying_key().to_sec1_point(false).as_bytes())
-                .unwrap();
+            compressed_public_key(signing.verifying_key().to_sec1_point(false).as_bytes()).unwrap();
 
         assert!(Schema::verify_request_msg(&public_key, &msg, &proof));
+    }
+}
+
+/// A passkey whose private half lives in a browser.
+///
+/// The wallet SDK's [`WalletSigner`](defuse_wallet_sdk::WalletSigner) assumes
+/// signing is a local, awaited operation. A passkey signature is neither: it
+/// needs a user to touch a device, across at least one HTTP round trip.
+///
+/// Rather than reimplement the SDK's request construction — which handles nonce
+/// generation and recursive extension wrapping, and would silently drift from
+/// the SDK if copied — this captures the message the SDK itself builds.
+///
+/// Two phases:
+///
+/// 1. Ask the SDK to sign. This signer records the exact `RequestMessage` it
+///    was handed and then refuses, because it has no proof yet. The caller
+///    reads the captured message and sends its hash to the browser as the
+///    challenge.
+/// 2. The browser returns an assertion. The caller turns it into a proof with
+///    [`proof_from_browser`] and submits it against the *captured* message.
+///
+/// The refusal in phase 1 is expected, not an error condition. It is the
+/// mechanism.
+#[derive(Debug)]
+pub struct BrowserPasskey {
+    public_key: P256CompressedPublicKey,
+    captured: std::sync::Mutex<Option<defuse_wallet_sdk::RequestMessage>>,
+}
+
+/// Why a [`BrowserPasskey`] declined to sign.
+#[derive(Debug, thiserror::Error)]
+pub enum BrowserSignerError {
+    #[error(
+        "this passkey signs in a browser: the request message has been captured and its hash \
+         must be sent to the browser as a WebAuthn challenge"
+    )]
+    SigningHappensInTheBrowser,
+
+    #[error("offchain message signing is not wired up for browser passkeys")]
+    OffchainNotSupported,
+}
+
+impl BrowserPasskey {
+    pub fn new(public_key: P256CompressedPublicKey) -> Self {
+        Self {
+            public_key,
+            captured: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// The message the SDK last asked this passkey to sign.
+    pub fn captured(&self) -> Option<defuse_wallet_sdk::RequestMessage> {
+        self.captured.lock().expect("poisoned").clone()
+    }
+}
+
+impl defuse_wallet_sdk::WalletSigner<crate::migration::PasskeySchema> for BrowserPasskey {
+    type Error = BrowserSignerError;
+
+    fn public_key(&self) -> P256CompressedPublicKey {
+        self.public_key
+    }
+
+    async fn sign_request_msg(
+        &self,
+        msg: &defuse_wallet_sdk::RequestMessage,
+    ) -> Result<defuse_wallet_sdk::Proof, Self::Error> {
+        *self.captured.lock().expect("poisoned") = Some(msg.clone());
+        Err(BrowserSignerError::SigningHappensInTheBrowser)
+    }
+
+    async fn sign_offchain_msg(
+        &self,
+        _msg: &defuse_wallet_sdk::offchain::OffchainMessage,
+    ) -> Result<defuse_wallet_sdk::Proof, Self::Error> {
+        Err(BrowserSignerError::OffchainNotSupported)
     }
 }

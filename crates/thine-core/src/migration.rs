@@ -8,11 +8,15 @@
 //! nothing.
 
 use anyhow::{Context, Result, bail};
+use std::sync::Arc;
+
 use defuse_wallet_sdk::{
-    Gas, NearPromise, NearToken, Request, Wallet, WalletOp,
+    Gas, NearPromise, NearToken, Request, RequestMessage, Wallet, WalletBuilder, WalletOp,
     actions::FunctionCall,
     client::{WExecuteExtensionArgs, WalletContract},
+    relayer::{WalletRelayRequest, WalletRelayer},
 };
+use defuse_wallet_webauthn::crypto::p256::P256CompressedPublicKey;
 use defuse_wallet_webauthn::{WalletWebauthn, p256::P256, webauthn::IgnoreUserVerification};
 use near_kit::{AccountId, CryptoHash, Near, rpc::FinalExecutionOutcome, transaction::Final};
 
@@ -20,6 +24,7 @@ use crate::{
     authority::Refusal,
     chain::{Chain, WalletProbe},
     proof::{ProofLedger, ProofRecord},
+    webauthn::BrowserPasskey,
 };
 
 /// The signature schema a passkey-controlled `0s` wallet runs.
@@ -31,6 +36,15 @@ pub type PasskeySchema = WalletWebauthn<P256, IgnoreUserVerification>;
 
 /// A passkey-controlled wallet handle.
 pub type PasskeyWallet = Wallet<PasskeySchema>;
+
+/// Which shape of request a browser passkey is being asked to sign.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigningRoute {
+    /// Signed for the `0s` wallet itself. Creates the account.
+    Direct,
+    /// Signed to travel on to the user account. Proves the route.
+    ThroughUser,
+}
 
 /// What one step did.
 #[derive(Debug, Clone)]
@@ -264,7 +278,10 @@ impl Migration {
 
         let keys = self.chain.full_access_keys(&self.user).await?;
         if keys.is_empty() {
-            bail!("{} has no full access keys left; step 5 is already done", self.user);
+            bail!(
+                "{} has no full access keys left; step 5 is already done",
+                self.user
+            );
         }
 
         let mut outcomes = Vec::new();
@@ -310,6 +327,137 @@ impl Migration {
         Ok(outcomes)
     }
 
+    /// Build a wallet handle for a passkey held in a browser, from its public
+    /// key alone.
+    ///
+    /// The `0s` account id this derives is fixed by the public key and the
+    /// contract code, so it can be shown to the user before the account
+    /// exists.
+    pub fn browser_passkey_wallet(
+        &self,
+        public_key: P256CompressedPublicKey,
+        relayer: &Near,
+    ) -> (PasskeyWallet, Arc<BrowserPasskey>) {
+        let passkey = Arc::new(BrowserPasskey::new(public_key));
+        let wallet = WalletBuilder::new()
+            .build(self.p256_code_hash, Arc::clone(&passkey))
+            .with_client(relayer.clone())
+            .with_relayer(relayer.clone());
+        (wallet, passkey)
+    }
+
+    /// Get the exact message a browser passkey must sign, and its challenge.
+    ///
+    /// The message is built by the SDK, not by us, so nonce generation and the
+    /// recursive extension wrapping cannot drift from what the contract
+    /// expects. [`BrowserPasskey`] captures it and declines to sign, which is
+    /// the mechanism rather than a failure.
+    ///
+    /// `route` decides the shape, and the two are not interchangeable:
+    ///
+    /// - [`SigningRoute::Direct`] signs for the `0s` wallet itself. This is
+    ///   what creates the account, and it is the only shape that works before
+    ///   the passkey has been authorised, because a routed request would be
+    ///   refused by a user account that does not yet list it.
+    /// - [`SigningRoute::ThroughUser`] signs a request that travels on to the
+    ///   user account's `w_execute_extension`. That is the two-hop path which
+    ///   will be the only path after step 5, so it is the shape that proves
+    ///   anything.
+    pub async fn capture_signing_request(
+        &self,
+        wallet: &PasskeyWallet,
+        passkey: &BrowserPasskey,
+        route: SigningRoute,
+    ) -> Result<(RequestMessage, [u8; 32])> {
+        let handle = match route {
+            SigningRoute::Direct => wallet.clone(),
+            SigningRoute::ThroughUser => wallet.clone().as_extension_of(self.user.clone()),
+        };
+
+        if handle.sign(Request::new()).await.is_ok() {
+            bail!(
+                "a browser passkey produced a signature locally, which should be impossible; \
+                 refusing to continue"
+            );
+        }
+
+        let msg = passkey.captured().ok_or_else(|| {
+            anyhow::anyhow!("the SDK did not hand the passkey a request message to capture")
+        })?;
+
+        let hash = msg.hash();
+        Ok((msg, hash))
+    }
+
+    /// Phase 2 of step 4: submit what the browser signed.
+    ///
+    /// `create_account` initialises the `0s` account in the same transaction,
+    /// which is needed only the first time a passkey is used. Submission goes
+    /// through the SDK's own relayer, which validates the chain id, checks the
+    /// state init derives the account being called, attaches the right deposit
+    /// and gas, and refuses an expired message.
+    pub async fn submit_browser_proof(
+        &self,
+        relayer: &Near,
+        wallet: &PasskeyWallet,
+        msg: RequestMessage,
+        proof: String,
+        create_account: bool,
+        require_reaching_user: bool,
+    ) -> Result<(StepOutcome, ProofRecord)> {
+        let passkey_account = wallet.real_account_id().clone();
+
+        let mut request = WalletRelayRequest::new(msg, proof);
+        if create_account {
+            request = request.deterministic_state_init(wallet.deterministic_state_init().clone());
+        }
+
+        let sent = relayer
+            .relay_wallet_msg(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("relaying the browser-signed request: {e}"))?;
+
+        let outcome = sent
+            .status(relayer)
+            .wait_until::<Final>()
+            .await
+            .context("waiting for the browser-signed transaction")?;
+
+        if !outcome.is_success() {
+            bail!(
+                "the passkey could not drive the account: {:?}",
+                outcome.status
+            );
+        }
+
+        // Same condition as the local path: for a routed request the hop must
+        // have landed on the user's account, or the passkey has proven a
+        // signature rather than a route. Creating the `0s` account is not
+        // routed and is not held to this.
+        if require_reaching_user {
+            let reached_user = outcome
+                .receipts_outcome
+                .iter()
+                .any(|r| r.outcome.executor_id == self.user);
+            if !reached_user {
+                bail!(
+                    "the transaction succeeded but never reached {}, so this is not proof that \
+                     the passkey can drive the account",
+                    self.user
+                );
+            }
+        }
+
+        let record = ProofRecord {
+            extension_account_id: passkey_account.to_string(),
+            tx_hash: outcome.transaction_hash().to_string(),
+            relayed_by: relayer.account_id().to_string(),
+            recorded_at: crate::now_rfc3339(),
+        };
+
+        Ok((summarise("4: prove a passkey (browser)", &outcome), record))
+    }
+
     /// The promise shape step 4 proves, exposed so the benchmark and the view
     /// can describe the same thing.
     pub fn proof_request(&self) -> NearPromise {
@@ -342,7 +490,11 @@ async fn settle(client: &Near, outcome: &FinalExecutionOutcome) -> Result<()> {
 }
 
 fn summarise(step: &'static str, outcome: &FinalExecutionOutcome) -> StepOutcome {
-    let near_burnt = outcome.transaction_outcome.outcome.tokens_burnt.as_yoctonear()
+    let near_burnt = outcome
+        .transaction_outcome
+        .outcome
+        .tokens_burnt
+        .as_yoctonear()
         + outcome
             .receipts_outcome
             .iter()

@@ -126,11 +126,11 @@ async fn sweep_one(near: &Near, relayer_id: &AccountId, n: usize) -> Result<u128
     // Wait for the account to appear before trying to spend from it.
     let mut balance = 0u128;
     for _ in 0..12 {
-        if let Ok(v) = near.account(account_id.clone()).await {
-            if v.amount.as_yoctonear() > 0 {
-                balance = v.amount.as_yoctonear();
-                break;
-            }
+        if let Ok(v) = near.account(account_id.clone()).await
+            && v.amount.as_yoctonear() > 0
+        {
+            balance = v.amount.as_yoctonear();
+            break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
     }

@@ -238,7 +238,10 @@ impl Chain {
             .global_contract(account_id.clone())
             .await
             .with_context(|| {
-                format!("fetching the global contract served by {account_id} on {}", self.network)
+                format!(
+                    "fetching the global contract served by {account_id} on {}",
+                    self.network
+                )
             })?
             .code)
     }
@@ -310,7 +313,10 @@ impl Chain {
     ) -> Result<AuthorityView> {
         let facts = self.account_facts(account_id).await?;
         if !facts.exists {
-            return Err(anyhow!("account {account_id} does not exist on {}", self.network));
+            return Err(anyhow!(
+                "account {account_id} does not exist on {}",
+                self.network
+            ));
         }
 
         let snapshot = self.state_snapshot(account_id).await?;
@@ -363,10 +369,7 @@ impl Chain {
                             let verified = match ledger.for_account(ext.as_str()) {
                                 None => None,
                                 Some(record) => {
-                                    if self
-                                        .verify_proof(record, account_id)
-                                        .await
-                                        .unwrap_or(false)
+                                    if self.verify_proof(record, account_id).await.unwrap_or(false)
                                     {
                                         Some(record.tx_hash.clone())
                                     } else {

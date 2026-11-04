@@ -420,7 +420,12 @@ mod tests {
         // account, which is 0.00635 NEAR staked forever.
         let o = OrphanedStorage {
             bytes: 635,
-            keys: vec!["STATE".into(), "alpha".into(), "beta".into(), "gamma".into()],
+            keys: vec![
+                "STATE".into(),
+                "alpha".into(),
+                "beta".into(),
+                "gamma".into(),
+            ],
         };
         assert_eq!(o.staked_yocto(), 6_350_000_000_000_000_000_000);
     }

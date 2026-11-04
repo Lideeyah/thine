@@ -285,7 +285,10 @@ mod tests {
     #[test]
     fn with_two_added_but_unproven_the_next_thing_is_proving_them() {
         let plan = Plan::of(&view(
-            Stage::PasskeysAdded { added: 2, proven: 0 },
+            Stage::PasskeysAdded {
+                added: 2,
+                proven: 0,
+            },
             vec![
                 key(),
                 self_ext(),
@@ -301,7 +304,10 @@ mod tests {
     #[test]
     fn the_irreversible_step_is_blocked_and_says_why_until_both_are_proven() {
         let plan = Plan::of(&view(
-            Stage::PasskeysAdded { added: 2, proven: 1 },
+            Stage::PasskeysAdded {
+                added: 2,
+                proven: 1,
+            },
             vec![
                 key(),
                 self_ext(),
@@ -318,7 +324,10 @@ mod tests {
     #[test]
     fn with_both_proven_the_irreversible_step_becomes_available() {
         let plan = Plan::of(&view(
-            Stage::PasskeysAdded { added: 2, proven: 2 },
+            Stage::PasskeysAdded {
+                added: 2,
+                proven: 2,
+            },
             vec![key(), self_ext(), proven("0saaa"), proven("0sbbb")],
         ));
         assert_eq!(plan.steps[2].state, StepState::Done);
@@ -348,7 +357,10 @@ mod tests {
         assert!(
             !plan.steps.iter().any(|s| s.state == StepState::Done),
             "nothing is done yet: {:?}",
-            plan.steps.iter().map(|s| (s.id, s.state)).collect::<Vec<_>>()
+            plan.steps
+                .iter()
+                .map(|s| (s.id, s.state))
+                .collect::<Vec<_>>()
         );
         assert_eq!(plan.steps[3].state, StepState::Pending);
         assert_eq!(plan.steps[4].state, StepState::Pending);
@@ -362,8 +374,16 @@ mod tests {
     #[test]
     fn a_reason_is_only_attached_to_a_step_that_is_actually_blocked() {
         let plan = Plan::of(&view(
-            Stage::PasskeysAdded { added: 2, proven: 1 },
-            vec![key(), self_ext(), proven("0saaa"), passkey("0sbbb", HolderStatus::Live)],
+            Stage::PasskeysAdded {
+                added: 2,
+                proven: 1,
+            },
+            vec![
+                key(),
+                self_ext(),
+                proven("0saaa"),
+                passkey("0sbbb", HolderStatus::Live),
+            ],
         ));
         for step in &plan.steps {
             assert_eq!(

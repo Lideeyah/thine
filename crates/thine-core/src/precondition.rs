@@ -42,7 +42,10 @@ impl StateRecord {
             Ok(s) if s.chars().all(|c| !c.is_control()) => s.to_string(),
             _ => format!(
                 "0x{}",
-                self.key.iter().map(|b| format!("{b:02x}")).collect::<String>()
+                self.key
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
             ),
         }
     }
@@ -131,7 +134,10 @@ mod tests {
             rec("beta", 128),
             rec("gamma", 256),
         ]);
-        assert!(snap.check().is_ok(), "b\"STATE\" must not collide with b\"\"");
+        assert!(
+            snap.check().is_ok(),
+            "b\"STATE\" must not collide with b\"\""
+        );
 
         let orphaned = snap.orphaned().expect("should report orphaned storage");
         assert_eq!(

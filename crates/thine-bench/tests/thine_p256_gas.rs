@@ -14,8 +14,8 @@
 use std::{collections::BTreeMap, sync::LazyLock};
 
 use defuse_wallet_sdk::{
-    Gas, NearPromise, NearToken, Request, Wallet, WalletBuilder, WalletOp,
-    actions::FunctionCall, client::WalletContract,
+    Gas, NearPromise, NearToken, Request, Wallet, WalletBuilder, WalletOp, actions::FunctionCall,
+    client::WalletContract,
 };
 use defuse_wallet_webauthn::{
     WalletWebauthn,
