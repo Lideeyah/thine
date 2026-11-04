@@ -1,0 +1,24 @@
+[package]
+name = "thine-bench"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Thine's committed measurements: P-256 hop gas, migration over existing state, publication cost."
+publish = false
+
+[dependencies]
+thine-core = { path = "../thine-core" }
+
+[dev-dependencies]
+defuse-wallet-sdk = { workspace = true }
+defuse-wallet-webauthn = { workspace = true }
+
+near-kit = { workspace = true }
+near-kit-sandbox = { workspace = true }
+
+rand = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
