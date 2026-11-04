@@ -1,0 +1,27 @@
+# Standalone: this is a wasm32 contract, deliberately kept out of the root
+# workspace so `cargo test --workspace` does not try to build it for the host.
+[workspace]
+
+[package]
+name = "thine-probe"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT"
+publish = false
+description = "An ordinary near-sdk contract, used only to set up the three pre-migration states that Thine's check 2 test exercises."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.30.0"
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+lto = true
+debug = false
+strip = "symbols"
+panic = "abort"
+overflow-checks = true

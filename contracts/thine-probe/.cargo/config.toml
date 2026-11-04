@@ -1,0 +1,11 @@
+# Mirrors how github.com/near/intents builds its contracts, so the committed
+# artefact digest does not depend on where this repository is checked out.
+#   --cfg=near            : NEAR contracts are built with this set; without it
+#                           contracts in this family trap at runtime.
+#   --remap-path-prefix   : strips absolute paths out of the binary.
+[target.'cfg(target_family = "wasm")']
+rustflags = [
+  "--cfg=near",
+  "--remap-path-prefix=.=src",
+  "--remap-path-prefix=${HOME}=/",
+]
