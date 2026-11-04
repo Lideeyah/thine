@@ -1,0 +1,10 @@
+/target
+**/target
+# A reference checkout of github.com/near/intents may land here; it is a
+# dependency fetched by cargo, never part of this repository.
+/intents
+.DS_Store
+# Local key material and account state. Never commit these.
+*.key
+/.thine
+node_modules

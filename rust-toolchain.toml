@@ -1,0 +1,5 @@
+# Pinned so the committed WASM artefact digests are reproducible. This matches
+# the toolchain github.com/near/intents pins for the wallet contracts.
+[toolchain]
+channel = "1.97.1"
+targets = ["wasm32-unknown-unknown"]
