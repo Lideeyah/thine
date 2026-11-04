@@ -1,0 +1,300 @@
+# Thine
+
+Thine moves an existing NEAR account from seed-phrase control to passkey control. The account keeps
+its id and no assets move.
+
+The thing you look at while using it is a view of who can currently open your account. Migration is
+the operation that changes what that view shows.
+
+## The problem
+
+A NEAR account is opened by whoever holds its seed phrase. That is a single secret, written down or
+stored in a password manager, and it is the only thing between an account and anyone who finds it.
+Passkeys are the mechanism most people now use for everything else: hardware-backed, unphishable,
+and already on their devices.
+
+A passkey cannot simply be added to a NEAR account. Passkeys sign with P-256 (secp256r1), and NEAR
+access keys are ed25519 or secp256k1 only. There is no access key that represents a passkey, so
+passkey control has to be contract-mediated: the account itself becomes a wallet contract that
+delegates authority to separate passkey-controlled accounts. That single constraint determines the
+whole design.
+
+The dangerous part is the end of that process, where the last full access key is deleted. After
+that, the passkeys are the only way in. The wallet contract does not protect you here: its lockout
+guard checks only that the delegate set is non-empty, and never checks that anything in that set can
+be reached. An account whose only delegate is an address that was never created, or whose passkey
+has been lost, satisfies the contract and is permanently unopenable.
+
+That gap is why Thine shows you who can open your account rather than just running a flow, and why
+it refuses rather than warns.
+
+## What it does
+
+Five steps, each one transaction:
+
+1. The account becomes a `wallet-no-sign` contract. `UseGlobalContract` and a call to `w_init` go
+   out in one receipt, signed by the existing full access key. Authority does not change: the
+   account becomes its own only delegate, so whoever holds a key still holds everything.
+2. A passkey-controlled account is created. Its id is a NEP-616 deterministic address derived from
+   the contract code and the passkey's public key, created with `DeterministicStateInit` at zero
+   balance.
+3. That account is authorised as a delegate of yours.
+4. The passkey signs a real request through your account, proving it can drive it.
+5. The account stops delegating to itself, then every full access key is deleted. This is the step
+   that cannot be undone.
+
+Three refusals, each one a hard stop that sends nothing:
+
+- **Before step 1**, if your account's contract already uses the empty storage key. That is where
+  the wallet contract keeps its own state, and `w_init` would fail.
+- **Before step 3**, if the passkey account does not answer `w_public_key`. `AddExtension` does not
+  check that its argument exists, so this is the check that stops you authorising something
+  unreachable.
+- **Before step 5**, unless two independent passkeys have each completed step 4. Being added is not
+  evidence that anyone can still sign with a passkey, and one passkey is a single point of failure
+  once the seed phrase is gone. The proofs are re-read from the chain, not from local state.
+
+## Try it
+
+Everything below runs against a local NEAR sandbox. No wallet, no funds, no faucet, no account.
+
+### Prerequisites
+
+Rust (the toolchain is pinned by `rust-toolchain.toml`) and a running Docker daemon.
+`near-kit-sandbox` runs `neard` in a container. On macOS with colima:
+
+```bash
+colima start && export DOCKER_HOST="unix://$HOME/.colima/default/docker.sock"
+```
+
+### Do this: run the whole migration end to end
+
+```bash
+cargo test -p thine-bench --test thine_migration_e2e -- --nocapture --test-threads=1
+```
+
+**See this:** an account migrated from key control to passkey control, with all three refusals
+firing first. The run takes about 20 seconds. The output ends with the account being driven by a
+passkey when no full access key exists anywhere:
+
+```
+--- refusal 1: the empty storage key is occupied ---
+refused: this account's contract already uses the empty storage key ...
+
+=== migrating lydia.sandbox ===
+start: SeedControlled, 1 holder(s)
+step 1: 2.2886 TGas, 0.000207 NEAR
+
+--- refusal 2: the extension is not a live wallet ---
+refused: refusing to add an extension that is not a live wallet account ...
+
+step 2A: 0sc48b... exists, 242 bytes of storage
+step 3A: 1.8001 TGas
+
+--- refusal 3: two passkeys added, neither has signed ---
+refused: 0 of 2 passkeys have proven they can sign ...
+
+step 4A: 6.3164 TGas
+--- refusal 3b: one passkey proven, two required ---
+refused: 1 of 2 passkeys have proven they can sign ...
+step 4B: 6.3159 TGas
+
+--- step 5: irreversible ---
+  5a: drop the self-extension: 1.8006 TGas
+  5b: delete a full access key: 0.6292 TGas
+
+end: PasskeyControlled { proven: 2 }
+after migration, passkey A still drives lydia.sandbox: 6.3134 TGas
+```
+
+### Do this: look at a real account's authority
+
+```bash
+cargo run -p thine-cli -- inspect <any-account>.testnet
+```
+
+**See this:** who can open that account, whether it would survive having its keys deleted, and the
+five steps with the irreversible one marked. For an ordinary account, step 1 is marked `NOW`, steps
+2 to 5 are pending, and key deletion is refused.
+
+Add `--json` for the same thing as data. That is the shape the interface consumes, so the screen and
+the command line read one model.
+
+### Do this: check the measurements
+
+```bash
+cargo test -p thine-bench -- --test-threads=1
+```
+
+**See this:** four sandbox tests passing, printing the numbers in the next section. Nothing needs
+building first; the contract artefacts are committed and checked against recorded digests on load.
+
+```bash
+cargo test --workspace
+```
+
+**See this:** 43 tests passing: 39 unit tests that need no Docker, and the 4 sandbox tests above.
+
+## Measurements
+
+Every number here comes from a committed test you can re-run. Each was measured at protocol version
+88, which is what testnet and the sandbox run; mainnet is at 87, so re-confirm before quoting a cost
+to a user.
+
+### What a passkey hop costs
+
+`cargo test -p thine-bench --test thine_p256_gas`
+
+| | Gas | NEAR burnt |
+|---|---|---|
+| One hop: `w_execute_signed` to a second account | 6.4881 TGas | 0.000604 |
+| Two hop: via your account's `w_execute_extension` | 8.6007 TGas | 0.000793 |
+
+Stable to within 0.001 TGas across three runs. The two-hop figure is the one that matters, because
+it is the route a passkey takes once the keys are gone.
+
+Breaking down the 4.2767 TGas receipt on the passkey wallet:
+
+| Cost | Gas |
+|---|---|
+| `P256_VERIFY_BASE` — signature verification | 1.3000 TGas |
+| `WASM_INSTRUCTION` — `clientDataJSON` parsing, decoding, logic | 1.0035 TGas |
+| `CONTRACT_LOADING_BYTES` | 0.4588 TGas |
+| `FUNCTION_CALL_BASE` + `NEW_ACTION_RECEIPT` — promise construction | 0.3081 TGas |
+| storage, memory, registers, UTF-8 decoding | 0.2590 TGas |
+
+Verification is a flat 1.3 TGas because NEAR verifies P-256 in a host function
+(`env::p256_verify`), not in WASM. Before this was measured there was no public number for it: P-256
+wallets exist on mainnet but had only ever been created, never used.
+
+### Migrating an account that already has a contract
+
+`cargo test -p thine-bench --test thine_migration_state`
+
+| Starting state | Result |
+|---|---|
+| No contract | Succeeds. +118 bytes, 300 bytes total, 0.003 NEAR staked. |
+| An ordinary contract with data | Succeeds. Frees 1.12735 NEAR of code stake, orphans 635 bytes. |
+| A contract using the empty storage key | Refused. `w_init` panics; nothing changes. |
+
+Replacing an account's code frees what the old contract's bytes were staking but leaves every data
+key in place, so a migrated account keeps paying for data nothing can read. For the test account
+that is 635 bytes, 0.00635 NEAR, permanently. `thine inspect` shows this figure for any account that
+has it.
+
+A failed `w_init` rolls back the `UseGlobalContract` in the same receipt, so a refused migration
+leaves the account exactly as it was. That is measured, not assumed.
+
+### What deploying Thine costs
+
+`cargo test -p thine-bench --test thine_publish_cost`
+
+| Contract | Size | Burn |
+|---|---|---|
+| `wallet-no-sign` | 308,482 B | 30.850628 NEAR |
+| `wallet-webauthn-p256` | 370,286 B | 37.031503 NEAR |
+| Total | | 67.882131 NEAR |
+
+NEP-591 charges publication at ten times the ordinary storage rate and the burn is not refundable.
+Measured against the exact bytes running on mainnet.
+
+On testnet this is funded from the faucet, which grants 10 NEAR per request and allows roughly ten
+requests a day. `thine fund` scripts the seven requests and the consolidation. NEAR's docs publish
+neither figure.
+
+## NEAR features used
+
+- **NEP-591 global contracts.** Both wallet contracts are published by code hash and referenced with
+  `UseGlobalContract`. By hash rather than by account id, so the reference is immutable: it is the
+  only way back into a migrated account.
+- **NEP-616 deterministic account ids.** Each passkey's account id is derived from the contract and
+  the passkey's public key, so it is known before it exists.
+- **NEP-448 zero-balance accounts.** A passkey account uses 242 bytes, inside the 770-byte limit, so
+  creating one needs no funding.
+- **`env::p256_verify`.** The host function that makes passkey verification cost 1.3 TGas instead of
+  a WASM-priced elliptic curve operation.
+- **Access key deletion** (`DeleteKey`) as the final, irreversible step.
+- **`view_state`, `view_access_key_list`, `view_global_contract_code_by_account_id`** and
+  `EXPERIMENTAL_tx_status` for the authority view, the preconditions, and proof verification.
+
+## Partner protocols and components used
+
+- **NEAR's wallet contracts**, from [github.com/near/intents](https://github.com/near/intents)
+  (MIT): `wallet-no-sign` and `wallet-webauthn-p256`. Thine deploys and drives these; it does not
+  reimplement them. Pinned by commit `32cd1f9788a347908164fbcc56525dc6542f158f`. The copies in
+  `res/` are the exact bytes deployed on mainnet.
+- **`defuse-wallet-sdk`** from the same repository, for the wallet client bindings, request signing
+  and relaying.
+- **`near-kit`** and **`near-kit-sandbox`** 0.20.1 for RPC and the local test network.
+
+## What is not built yet
+
+Stated plainly, because the rest of this file is about what does work.
+
+- **Real browser passkeys are not wired up.** The passkey in every test is a software P-256 key
+  driven through NEAR's own `MockWalletWebauthnSigner`, which produces genuine WebAuthn assertions:
+  real `authenticator_data`, real `client_data_json`, a real P-256 signature over the correct
+  challenge. The contract verifies them exactly as it would a hardware authenticator's, so the
+  on-chain path is complete and measured. What is missing is the browser front end that asks a real
+  device for those assertions instead of generating them locally.
+- **Nothing is deployed on testnet yet.** `thine publish` exists and is tested against a sandbox,
+  but the faucet's daily allowance ran out partway through funding the relayer, which currently
+  holds 59.95 of the 68.38 NEAR needed.
+- **There is no hosted demo and no web interface.** The authority view exists as a model and as
+  `thine inspect --json`; the screen that renders it does not exist yet.
+- **No mainnet deployment.** Nothing in this repository has sent a mainnet transaction.
+
+## After the hackathon
+
+The useful part of Thine is not the migration, which is a one-off. It is the authority view: a
+straight answer to "who can open this account", which NEAR does not currently give you anywhere.
+Accounts accumulate function call keys, delegates and contract-mediated authority, and there is no
+single place that says what that adds up to.
+
+The migration is the first operation that view makes safe. The others are the same shape: revoking a
+delegate you no longer recognise, rotating one passkey for another, adding a recovery delegate,
+auditing an account you are about to be given control of. All of them are operations where the
+question "what will be able to open this afterwards" is the one that matters, and all of them are
+served by the same model and the same refusals.
+
+Running it costs almost nothing to operate. A relayer paying 0.000793 NEAR per passkey hop can
+cover a user's entire year of account operations for a fraction of a cent, which is why the
+measurements in this repository exist: they are what makes that claim checkable rather than
+asserted.
+
+The parts worth keeping are already separated. `thine-core` holds the model, the preconditions and
+the refusals, with no network in it; `thine-cli` is one consumer and a browser front end would be
+another.
+
+## Disclosures
+
+- **Code written during the hackathon.** All of it. This repository was created on 4 November 2026
+  and has no pre-hackathon history. The eligibility window opened 19 October 2026.
+- **AI coding assistance was used** throughout, for writing and reviewing the Rust in `thine-core`,
+  `thine-cli` and `thine-bench`, and for the measurement scripts. The architecture, the decision to
+  make the authority view the product, the two-passkey rule and the refusals are the author's.
+- **No templates or boilerplate.** The crates were written from scratch, not scaffolded.
+- **Third-party code**, listed above under partner protocols. The two wallet contracts are NEAR's,
+  not ours, and are committed as compiled artefacts under `res/` with their digests recorded. The
+  `MockWalletWebauthnSigner` used by the tests is also NEAR's.
+- **`contracts/thine-probe`** is ours, and exists only to put test accounts into the three
+  pre-migration states. It is not part of the product.
+- **No existing product on another chain.** Thine has no prior version anywhere.
+- **Corrections.** `docs/verification-report.md` records the measurements and, where an earlier
+  figure was wrong, says so and why. The testnet faucet figures were wrong in the first version of
+  that document and are corrected there.
+
+## Layout
+
+```
+crates/thine-core     the model: authority, plan, preconditions, refusals, chain reads
+crates/thine-cli      the thine command: faucet, fund, publish, inspect
+crates/thine-bench    the measurements, as committed tests
+contracts/thine-probe a near-sdk contract used only to set up test states
+res/                  the wallet contract artefacts, digest-checked on load
+docs/                 the verification report behind the measurements
+```
+
+## Licence
+
+MIT. See `LICENSE`.
