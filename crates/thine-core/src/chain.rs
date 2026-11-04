@@ -8,7 +8,7 @@ use anyhow::{Context, Result, anyhow};
 use defuse_wallet_sdk::client::WalletContract;
 use near_kit::{
     AccountId, CryptoHash, Near,
-    rpc::{AccessKeyPermissionView, ActionView, BlockReference, Finality},
+    rpc::{AccessKeyPermissionView, ActionView, BlockReference, ExecutionStatus, Finality},
     transaction::Final,
 };
 
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// The facts about an account that do not depend on it being a wallet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AccountFacts {
     pub account_id: String,
     pub exists: bool,
@@ -30,7 +30,8 @@ pub struct AccountFacts {
 }
 
 /// What happened when we tried to reach a `0s` wallet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "probe", rename_all = "snake_case")]
 pub enum WalletProbe {
     /// It answered `w_public_key`.
     Live { public_key: String },
@@ -188,10 +189,12 @@ impl Chain {
     /// Re-verify a recorded proof against the chain.
     ///
     /// A proof counts only if the transaction it names really exists, really
-    /// succeeded, and really was a `w_execute_signed` sent to the `0s` account
-    /// it claims. Anything else is rejected, including a transaction that
-    /// succeeded against a different account.
-    pub async fn verify_proof(&self, record: &ProofRecord) -> Result<bool> {
+    /// succeeded, really was a `w_execute_signed` sent to the `0s` account it
+    /// claims, **and** produced a successful receipt executed by the user's own
+    /// account. That last condition is what makes it proof of the path rather
+    /// than proof of a signature: it is the two-hop route that will be the only
+    /// route once the full access keys are gone. Anything else is rejected.
+    pub async fn verify_proof(&self, record: &ProofRecord, user: &AccountId) -> Result<bool> {
         let tx_hash: CryptoHash = record
             .tx_hash
             .parse()
@@ -221,11 +224,20 @@ impl Chain {
             return Ok(false);
         }
 
-        Ok(outcome.transaction.actions.iter().any(|a| {
+        let is_execute_signed = outcome.transaction.actions.iter().any(|a| {
             matches!(
                 a,
                 ActionView::FunctionCall { method_name, .. } if method_name == "w_execute_signed"
             )
+        });
+        if !is_execute_signed {
+            return Ok(false);
+        }
+
+        // The hop must have landed on the user's account and succeeded there.
+        Ok(outcome.receipts_outcome.iter().any(|r| {
+            r.outcome.executor_id == *user
+                && matches!(r.outcome.status, ExecutionStatus::SuccessValue(_))
         }))
     }
 
@@ -294,7 +306,11 @@ impl Chain {
                             let verified = match ledger.for_account(ext.as_str()) {
                                 None => None,
                                 Some(record) => {
-                                    if self.verify_proof(record).await.unwrap_or(false) {
+                                    if self
+                                        .verify_proof(record, account_id)
+                                        .await
+                                        .unwrap_or(false)
+                                    {
                                         Some(record.tx_hash.clone())
                                     } else {
                                         None

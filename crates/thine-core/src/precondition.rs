@@ -3,6 +3,8 @@
 //! Pure functions over a snapshot of an account's contract state, so they can
 //! be tested without a network. [`crate::chain`] fetches the snapshot.
 
+use serde::{Deserialize, Serialize};
+
 use crate::authority::{OrphanedStorage, Refusal};
 
 /// Bytes NEAR charges per data record on top of the key and value.
@@ -13,7 +15,7 @@ use crate::authority::{OrphanedStorage, Refusal};
 pub const STORAGE_OVERHEAD_PER_RECORD: u64 = 40;
 
 /// One contract state record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StateRecord {
     pub key: Vec<u8>,
     pub value_len: usize,
@@ -48,7 +50,7 @@ impl StateRecord {
 
 /// Everything in an account's contract state, as returned by a `view_state`
 /// query with an empty prefix.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StateSnapshot {
     pub records: Vec<StateRecord>,
 }

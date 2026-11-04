@@ -3591,6 +3591,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "defuse-wallet-sdk",
+ "defuse-wallet-webauthn",
  "near-kit",
  "serde",
  "serde_json",

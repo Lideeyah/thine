@@ -17,6 +17,8 @@
 
 use std::collections::BTreeSet;
 
+use serde::{Deserialize, Serialize};
+
 /// How many independent passkeys must have *proven* control before Thine will
 /// delete an account's full access keys.
 ///
@@ -25,13 +27,14 @@ use std::collections::BTreeSet;
 pub const MIN_PROVEN_PASSKEYS: usize = 2;
 
 /// A party that can act for the account, and on what evidence.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Holder {
     pub kind: HolderKind,
     pub status: HolderStatus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HolderKind {
     /// A NEAR full access key on the account itself. Can do anything, including
     /// deleting every other key. Before migration this is what the seed phrase
@@ -78,7 +81,8 @@ impl HolderKind {
 
 /// What we actually know about a holder, as opposed to what the extension set
 /// claims. The distinction is the whole point of the view.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum HolderStatus {
     /// Present on-chain and self-evidently usable: a full access key, or the
     /// self-extension while full access keys remain.
@@ -114,7 +118,7 @@ impl HolderStatus {
 ///
 /// Measured for a representative account by the check 2 test: a contract with
 /// four data keys left 635 orphaned bytes, 0.00635 NEAR, staked permanently.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrphanedStorage {
     pub bytes: u64,
     pub keys: Vec<String>,
@@ -128,7 +132,8 @@ impl OrphanedStorage {
 }
 
 /// Where an account is in the five-step migration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "stage", rename_all = "snake_case")]
 pub enum Stage {
     /// An ordinary account. Whoever holds the seed phrase holds everything.
     SeedControlled,
@@ -143,7 +148,7 @@ pub enum Stage {
 }
 
 /// One picture of who can open the account.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorityView {
     pub account_id: String,
     pub stage: Stage,

@@ -9,6 +9,7 @@ description = "Authority model and migration preconditions for Thine."
 
 [dependencies]
 defuse-wallet-sdk = { workspace = true }
+defuse-wallet-webauthn = { workspace = true }
 near-kit = { workspace = true }
 
 anyhow = { workspace = true }
