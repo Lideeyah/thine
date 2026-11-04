@@ -1,0 +1,13 @@
+[package]
+name = "thine-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Authority model and migration preconditions for Thine."
+
+[dependencies]
+serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = "2"

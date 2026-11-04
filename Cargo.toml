@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/thine-core"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT"
+repository = "https://github.com/Lideeyah/thine"
+
+# The wallet contracts Thine migrates onto are NEAR's own, from
+# github.com/near/intents. They are not published to crates.io, so they are
+# pinned here by commit so a clean checkout resolves to exactly the code these
+# measurements were taken against.
+[workspace.dependencies]
+defuse-wallet-sdk = { git = "https://github.com/near/intents", rev = "32cd1f9788a347908164fbcc56525dc6542f158f", default-features = false, features = ["near-kit"] }
+defuse-wallet-webauthn = { git = "https://github.com/near/intents", rev = "32cd1f9788a347908164fbcc56525dc6542f158f", features = ["borsh", "mock", "p256"] }
+
+# "contracts" provides the #[near_kit::contract] macro the wallet bindings use;
+# "rpc" is the HTTP client. Both are off by default in a default-features = false
+# build, and the wallet SDK does not enable them itself.
+near-kit = { version = "0.20.1", default-features = false, features = ["contracts", "rpc"] }
+near-kit-sandbox = "0.20.1"
+
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+rand = { version = "0.10.2", features = ["sys_rng"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
