@@ -262,7 +262,19 @@ under, the total burn, and whether the relayer can cover it.
 
 - **NEP-591 global contracts.** Both wallet contracts are published by code hash and referenced with
   `UseGlobalContract`. By hash rather than by account id, so the reference is immutable: it is the
-  only way back into a migrated account.
+  only way back into a migrated account. **Live on testnet**, published by
+  `thine-1a1a75385a8.testnet` on 11 November 2026, burning 67.882131 NEAR — the figure the
+  committed measurement predicted to the yoctoNEAR:
+
+  | Variant | Testnet global contract code hash |
+  |---|---|
+  | `wallet-no-sign` | `6NWBBut6hFFAPCghcoqaJUsqDLoTTmXcmWDpMeUQ93Xt` |
+  | `wallet-webauthn-p256` | `qD9cxbe38rJn7BwUBtqaC2vVAiYD7TS4vnrafccHsRp` |
+
+  Check them yourself: `view_global_contract_code` for either hash returns code whose SHA-256 is
+  exactly the digest recorded in `thine-core/src/artifacts.rs`, which is also byte-for-byte what
+  NEAR mainnet serves. On mainnet the same contracts are referenced **by account id**
+  (`0sfa7a4d20…`, `0saf343be2…`); they are not published by code hash there.
 - **NEP-616 deterministic account ids.** Each passkey's account id is derived from the contract and
   the passkey's public key, so it is known before it exists.
 - **NEP-448 zero-balance accounts.** A passkey account uses 242 bytes, inside the 770-byte limit, so
@@ -293,9 +305,6 @@ Stated plainly, because the rest of this file is about what does work.
   normalisation, against a real browser assertion from NEAR's own test vector; the whole migration
   through the real HTTP endpoints; and that Chrome accepts the `navigator.credentials.create` call
   on `localhost` and proceeds to wait for a device. What has not happened is a human touching one.
-- **Nothing is deployed on testnet yet.** `thine publish` is tested against a sandbox and
-  `--dry-run` confirms both artefacts against mainnet, but the faucet's daily allowance ran out
-  partway through funding the relayer, which holds 59.95 of the 68.38 NEAR needed.
 - **There is no hosted demo.** The interface runs locally against a sandbox; nothing is deployed
   for someone else to open.
 - **The interface is unstyled on purpose.** `crates/thine-web/static/index.html` is structure and
