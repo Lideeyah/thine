@@ -1,7 +1,21 @@
 # Thine
 
-Thine moves an existing NEAR account from seed-phrase control to passkey control. The account keeps
-its id and no assets move.
+Thine moves an existing NEAR account from seed phrase control to passkey control. The account id
+stays the same and no assets move. When the migration completes, the seed phrase key has been
+removed and passkeys are the only way to open the account.
+
+A passkey signs with P-256, and P-256 is not an access key type — NEAR's are ed25519, secp256k1 and
+ML-DSA-65 — so a passkey's authority has to live in contract code. Step 1 replaces the account's
+code with the `wallet-no-sign` contract, one receipt of `UseGlobalContract` plus a call to `w_init`,
+signed by the existing full access key; from then on the account's contract signs nothing itself and
+acts only for its listed delegates. Each passkey controls one delegate: a zero-balance `0s` account
+running `wallet-webauthn-p256`, at an address derived from the passkey's public key. When that
+account's `w_execute_signed` is called, the contract rebuilds the signed payload from
+`authenticator_data` and the SHA-256 of the exact `client_data_json` bytes, requires the WebAuthn
+challenge to be the request message's own hash, and checks the P-256 signature with the
+`p256_verify` host function against the public key fixed in that account's state. The seed phrase
+key is removed by the protocol's `DeleteKey` action, one per full access key, which step 5 sends
+only after two passkeys have each completed a `w_execute_signed` routed through the account.
 
 The thing you look at while using it is a view of who can currently open your account. Migration is
 the operation that changes what that view shows.
@@ -13,8 +27,8 @@ stored in a password manager, and it is the only thing between an account and an
 Passkeys are the mechanism most people now use for everything else: hardware-backed, unphishable,
 and already on their devices.
 
-A passkey cannot simply be added to a NEAR account. Passkeys sign with P-256 (secp256r1), and NEAR
-access keys are ed25519 or secp256k1 only. There is no access key that represents a passkey, so
+A passkey cannot simply be added to a NEAR account. Passkeys sign with P-256 (secp256r1), which is
+not among NEAR's access key types. There is no access key that represents a passkey, so
 passkey control has to be contract-mediated: the account itself becomes a wallet contract that
 delegates authority to separate passkey-controlled accounts. That single constraint determines the
 whole design.
@@ -206,8 +220,7 @@ Breaking down the 4.2767 TGas receipt on the passkey wallet:
 | storage, memory, registers, UTF-8 decoding | 0.2590 TGas |
 
 Verification is a flat 1.3 TGas because NEAR verifies P-256 in a host function
-(`env::p256_verify`), not in WASM. Before this was measured there was no public number for it: P-256
-wallets exist on mainnet but had only ever been created, never used.
+(`env::p256_verify`), not in WASM.
 
 ### Migrating an account that already has a contract
 
@@ -314,9 +327,8 @@ Stated plainly, because the rest of this file is about what does work.
 ## After the hackathon
 
 The useful part of Thine is not the migration, which is a one-off. It is the authority view: a
-straight answer to "who can open this account", which NEAR does not currently give you anywhere.
-Accounts accumulate function call keys, delegates and contract-mediated authority, and there is no
-single place that says what that adds up to.
+straight answer to "who can open this account". Accounts accumulate function call keys, delegates
+and contract-mediated authority.
 
 The migration is the first operation that view makes safe. The others are the same shape: revoking a
 delegate you no longer recognise, rotating one passkey for another, adding a recovery delegate,
