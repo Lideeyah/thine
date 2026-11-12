@@ -61,7 +61,9 @@ pub struct Pending {
 
 pub struct AppState {
     pub chain: Chain,
-    /// Endpoint and chain id the signing clients are built against.
+    /// Endpoint and chain id the signing clients are built against. On the
+    /// public networks this is the regular host rather than the archival one:
+    /// the two draw on separate rate-limit budgets, and the demo needs both.
     pub rpc: String,
     pub chain_id: String,
     pub relayer: Near,

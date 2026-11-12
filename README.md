@@ -150,7 +150,7 @@ cargo run -p thine-cli -- inspect <any-account>.testnet
 five steps with the irreversible one marked. For an ordinary account, step 1 is marked `NOW`, steps
 2 to 5 are pending, and key deletion is refused.
 
-Reads go through NEAR's archival RPC by default (`archival-rpc.testnet.near.org`, and the mainnet
+Reads go through NEAR's archival RPC by default (`archival-rpc.testnet.fastnear.com`, and the mainnet
 twin with `--network mainnet`), because the view verifies proof and removal transactions by their
 hash and a non-archival node forgets them after a few days. Both this command and the `thine-web`
 server take `--rpc` to override that; as a judge you would pass it to point the tool at the local

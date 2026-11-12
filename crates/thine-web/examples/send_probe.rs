@@ -10,8 +10,8 @@ async fn main() -> anyhow::Result<()> {
     let secret = keyed["secret_key"].as_str().unwrap().to_string();
 
     for rpc in [
-        thine_core::chain::TESTNET_ARCHIVAL_RPC,
-        "https://rpc.testnet.near.org",
+        "https://archival-rpc.testnet.fastnear.com",
+        "https://rpc.testnet.fastnear.com",
     ] {
         let near = Near::custom(rpc, "testnet")
             .credentials(&secret, account.clone())?

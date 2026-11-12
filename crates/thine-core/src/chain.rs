@@ -41,21 +41,63 @@ pub enum WalletProbe {
     Unreachable { reason: String },
 }
 
-/// NEAR's official archival RPC endpoints, which the read path uses by
-/// default. Archival rather than the regular public RPC because the view
-/// verifies proof and removal transactions by their hash, and a non-archival
-/// node forgets a transaction after a few days: on one, a reader would see
-/// the post-migration view with no removed rows and never learn the evidence
-/// exists. Confirmed directly: `rpc.testnet.near.org` answers `UNKNOWN_BLOCK`
-/// for months-old data that `archival-rpc.testnet.near.org` serves.
-pub const TESTNET_ARCHIVAL_RPC: &str = "https://archival-rpc.testnet.near.org";
-pub const MAINNET_ARCHIVAL_RPC: &str = "https://archival-rpc.mainnet.near.org";
+/// Archival RPC endpoints, which the read path uses by default. Archival
+/// rather than a regular node because the view verifies proof and removal
+/// transactions by their hash, and a non-archival node forgets a transaction
+/// after a few days: on one, a reader would see the post-migration view with
+/// no removed rows and never learn the evidence exists. Confirmed directly:
+/// the regular endpoints answer `UNKNOWN_BLOCK` for months-old data these
+/// serve.
+///
+/// FastNEAR rather than `*.near.org`: NEAR's own public endpoints are
+/// deprecated and now answer burst traffic with HTTP 429 telling callers to
+/// move to FastNEAR or another provider, which took down a live demo run
+/// mid-migration. These were then checked for the three things the tool
+/// needs: months-old blocks served, transaction sends accepted, and no 429
+/// across a 25-request burst.
+pub const TESTNET_ARCHIVAL_RPC: &str = "https://archival-rpc.testnet.fastnear.com";
+pub const MAINNET_ARCHIVAL_RPC: &str = "https://archival-rpc.mainnet.fastnear.com";
+
+/// Retry an RPC expression through transient throttling.
+///
+/// Public free-tier endpoints answer bursts with HTTP 429. Left unhandled,
+/// one throttled read does not just fail a request: a throttled probe reads
+/// as an unreachable extension, and the key-deletion guard then refuses, so
+/// rate limiting shows up as refusals of true things. Five attempts with
+/// linear backoff outlast the windows seen in practice; anything else, and
+/// the real error comes back unchanged.
+macro_rules! retry_429 {
+    ($e:expr) => {{
+        let mut attempt = 0u64;
+        loop {
+            let result = $e;
+            match result {
+                Err(err)
+                    if attempt < 4 && {
+                        let text = format!("{err:#?}");
+                        text.contains("429")
+                    } =>
+                {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(600 * attempt)).await;
+                }
+                other => break other,
+            }
+        }
+    }};
+}
 
 /// A read-only view of a NEAR network.
 #[derive(Clone)]
 pub struct Chain {
     near: Near,
     network: &'static str,
+    /// Verified proof and removal transactions, by hash. A transaction that
+    /// has been fetched and found to contain what its record claims cannot
+    /// stop containing it, so verifying it once per process is enough. This
+    /// matters on public RPC: without it every authority read re-fetched the
+    /// same transactions, and the free tiers rate-limit exactly that.
+    verified: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, Holder>>>,
 }
 
 impl Chain {
@@ -63,6 +105,7 @@ impl Chain {
         Self {
             near: Near::custom(TESTNET_ARCHIVAL_RPC, "testnet").build(),
             network: "testnet",
+            verified: Default::default(),
         }
     }
 
@@ -70,13 +113,18 @@ impl Chain {
         Self {
             near: Near::custom(MAINNET_ARCHIVAL_RPC, "mainnet").build(),
             network: "mainnet",
+            verified: Default::default(),
         }
     }
 
     /// Wrap an existing client, so a signing client or a sandbox can be read
     /// through the same code the CLI uses.
     pub fn with_client(near: Near, network: &'static str) -> Self {
-        Self { near, network }
+        Self {
+            near,
+            network,
+            verified: Default::default(),
+        }
     }
 
     pub fn network(&self) -> &'static str {
@@ -87,8 +135,27 @@ impl Chain {
         &self.near
     }
 
+    /// Like [`Self::account_facts`], for call sites where the account is
+    /// expected to exist. A load-balanced RPC can hand a read to a replica
+    /// that has not caught up, and one stale "does not exist" mid-migration
+    /// took down a live run at the final step; here that answer is retried
+    /// briefly before it is believed. Call sites where absence is an ordinary
+    /// answer, like deriving a passkey address, use the un-retried form and
+    /// stay fast.
+    pub async fn account_facts_expected(&self, account_id: &AccountId) -> Result<AccountFacts> {
+        let mut facts = self.account_facts(account_id).await?;
+        for _ in 0..3 {
+            if facts.exists {
+                return Ok(facts);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+            facts = self.account_facts(account_id).await?;
+        }
+        Ok(facts)
+    }
+
     pub async fn account_facts(&self, account_id: &AccountId) -> Result<AccountFacts> {
-        match self.near.account(account_id.clone()).await {
+        match retry_429!(self.near.account(account_id.clone()).await) {
             Ok(v) => Ok(AccountFacts {
                 account_id: account_id.to_string(),
                 exists: true,
@@ -108,11 +175,7 @@ impl Chain {
                 // not found" where the pattern expected "does not exist", so a
                 // freshly derived address came back as a 500 instead of as
                 // `exists: false`.
-                if !self
-                    .near
-                    .account_exists(account_id.clone())
-                    .await
-                    .unwrap_or(false)
+                if !retry_429!(self.near.account_exists(account_id.clone()).await).unwrap_or(false)
                 {
                     Ok(AccountFacts {
                         account_id: account_id.to_string(),
@@ -139,17 +202,18 @@ impl Chain {
         &self,
         account_id: &AccountId,
     ) -> Result<(StateSnapshot, crate::view::ReadAt)> {
-        let result = self
-            .near
-            .rpc()
-            .view_state_all(
-                account_id,
-                b"",
-                0,
-                BlockReference::Finality(Finality::Final),
-            )
-            .await
-            .with_context(|| format!("view_state {account_id}"))?;
+        let result = retry_429!(
+            self.near
+                .rpc()
+                .view_state_all(
+                    account_id,
+                    b"",
+                    0,
+                    BlockReference::Finality(Finality::Final),
+                )
+                .await
+        )
+        .with_context(|| format!("view_state {account_id}"))?;
 
         let read_at = crate::view::ReadAt {
             block_height: result.block_height,
@@ -176,17 +240,18 @@ impl Chain {
     /// This is the `view_state` query with an empty prefix that the migration
     /// precondition turns on.
     pub async fn state_snapshot(&self, account_id: &AccountId) -> Result<StateSnapshot> {
-        let result = self
-            .near
-            .rpc()
-            .view_state_all(
-                account_id,
-                b"",
-                0,
-                BlockReference::Finality(Finality::Final),
-            )
-            .await
-            .with_context(|| format!("view_state {account_id}"))?;
+        let result = retry_429!(
+            self.near
+                .rpc()
+                .view_state_all(
+                    account_id,
+                    b"",
+                    0,
+                    BlockReference::Finality(Finality::Final),
+                )
+                .await
+        )
+        .with_context(|| format!("view_state {account_id}"))?;
 
         Ok(StateSnapshot::new(
             result
@@ -206,12 +271,12 @@ impl Chain {
     /// proves the account exists and is a wallet. It does not prove anyone
     /// still holds the passkey; only a `w_execute_signed` does that.
     pub async fn probe_wallet(&self, account_id: &AccountId) -> WalletProbe {
-        match self
-            .near
-            .contract::<WalletContract>(account_id.clone())
-            .w_public_key()
-            .await
-        {
+        match retry_429!(
+            self.near
+                .contract::<WalletContract>(account_id.clone())
+                .w_public_key()
+                .await
+        ) {
             Ok(public_key) => WalletProbe::Live { public_key },
             Err(e) => WalletProbe::Unreachable {
                 reason: short_reason(&e.to_string()),
@@ -220,19 +285,23 @@ impl Chain {
     }
 
     pub async fn wallet_extensions(&self, account_id: &AccountId) -> Result<BTreeSet<AccountId>> {
-        self.near
-            .contract::<WalletContract>(account_id.clone())
-            .w_extensions()
-            .await
-            .with_context(|| format!("w_extensions on {account_id}"))
+        retry_429!(
+            self.near
+                .contract::<WalletContract>(account_id.clone())
+                .w_extensions()
+                .await
+        )
+        .with_context(|| format!("w_extensions on {account_id}"))
     }
 
     pub async fn signature_allowed(&self, account_id: &AccountId) -> Result<bool> {
-        self.near
-            .contract::<WalletContract>(account_id.clone())
-            .w_is_signature_allowed()
-            .await
-            .with_context(|| format!("w_is_signature_allowed on {account_id}"))
+        retry_429!(
+            self.near
+                .contract::<WalletContract>(account_id.clone())
+                .w_is_signature_allowed()
+                .await
+        )
+        .with_context(|| format!("w_is_signature_allowed on {account_id}"))
     }
 
     /// Full access keys currently on the account.
@@ -242,10 +311,7 @@ impl Chain {
     /// open the account that skipped it would be wrong, and step 5 would
     /// leave it holding the account after claiming the keys were gone.
     pub async fn full_access_keys(&self, account_id: &AccountId) -> Result<Vec<String>> {
-        let list = self
-            .near
-            .access_keys(account_id.clone())
-            .await
+        let list = retry_429!(self.near.access_keys(account_id.clone()).await)
             .with_context(|| format!("view_access_key_list {account_id}"))?;
 
         Ok(list
@@ -267,10 +333,7 @@ impl Chain {
     /// contract, methods and remaining allowance. Gas keys map to whichever of
     /// the two their permission grants.
     pub async fn key_holders(&self, account_id: &AccountId) -> Result<(Vec<Holder>, Vec<String>)> {
-        let list = self
-            .near
-            .access_keys(account_id.clone())
-            .await
+        let list = retry_429!(self.near.access_keys(account_id.clone()).await)
             .with_context(|| format!("view_access_key_list {account_id}"))?;
 
         let mut holders = Vec::new();
@@ -337,6 +400,15 @@ impl Chain {
     /// than proof of a signature: it is the two-hop route that will be the only
     /// route once the full access keys are gone. Anything else is rejected.
     pub async fn verify_proof(&self, record: &ProofRecord, user: &AccountId) -> Result<bool> {
+        let cache_key = format!("proof:{}:{}", record.tx_hash, record.extension_account_id);
+        if self
+            .verified
+            .lock()
+            .expect("poisoned")
+            .contains_key(&cache_key)
+        {
+            return Ok(true);
+        }
         let tx_hash: CryptoHash = record
             .tx_hash
             .parse()
@@ -377,10 +449,22 @@ impl Chain {
         }
 
         // The hop must have landed on the user's account and succeeded there.
-        Ok(outcome.receipts_outcome.iter().any(|r| {
+        let verified = outcome.receipts_outcome.iter().any(|r| {
             r.outcome.executor_id == *user
                 && matches!(r.outcome.status, ExecutionStatus::SuccessValue(_))
-        }))
+        });
+        if verified {
+            self.verified.lock().expect("poisoned").insert(
+                cache_key,
+                Holder {
+                    kind: HolderKind::SelfExtension, // placeholder; only presence matters
+                    status: HolderStatus::Proven {
+                        tx_hash: record.tx_hash.clone(),
+                    },
+                },
+            );
+        }
+        Ok(verified)
     }
 
     /// Verify a removal record against the chain and return the removed
@@ -397,6 +481,10 @@ impl Chain {
         record: &RemovalRecord,
         user: &AccountId,
     ) -> Result<Option<Holder>> {
+        let cache_key = format!("removal:{}:{}", record.tx_hash, record.subject);
+        if let Some(found) = self.verified.lock().expect("poisoned").get(&cache_key) {
+            return Ok(Some(found.clone()));
+        }
         let Ok(tx_hash) = record.tx_hash.parse::<CryptoHash>() else {
             return Ok(None);
         };
@@ -432,11 +520,18 @@ impl Chain {
                         ActionView::DeleteKey { public_key } if public_key.to_string() == record.subject
                     )
                 });
-                Ok(named.then(|| Holder {
-                    kind: HolderKind::FullAccessKey {
-                        public_key: record.subject.clone(),
-                    },
-                    status,
+                Ok(named.then(|| {
+                    let holder = Holder {
+                        kind: HolderKind::FullAccessKey {
+                            public_key: record.subject.clone(),
+                        },
+                        status,
+                    };
+                    self.verified
+                        .lock()
+                        .expect("poisoned")
+                        .insert(cache_key.clone(), holder.clone());
+                    holder
                 }))
             }
             RemovalKind::RemoveExtension => {
@@ -458,7 +553,14 @@ impl Chain {
                         public_key: None,
                     }
                 };
-                Ok(named.then_some(Holder { kind, status }))
+                Ok(named.then(|| {
+                    let holder = Holder { kind, status };
+                    self.verified
+                        .lock()
+                        .expect("poisoned")
+                        .insert(cache_key.clone(), holder.clone());
+                    holder
+                }))
             }
         }
     }
@@ -473,7 +575,7 @@ impl Chain {
         account_id: &AccountId,
         ledger: &ProofLedger,
     ) -> Result<AuthorityView> {
-        let facts = self.account_facts(account_id).await?;
+        let facts = self.account_facts_expected(account_id).await?;
         if !facts.exists {
             return Err(anyhow!(
                 "account {account_id} does not exist on {}",
@@ -591,7 +693,7 @@ impl Chain {
         account_id: &AccountId,
         ledger: &ProofLedger,
     ) -> Result<crate::view::AccountReport> {
-        let facts = self.account_facts(account_id).await?;
+        let facts = self.account_facts_expected(account_id).await?;
         if !facts.exists {
             return Err(anyhow!(
                 "account {account_id} does not exist on {}",

@@ -37,6 +37,8 @@ impl From<anyhow::Error> for ApiError {
         let status = if e.downcast_ref::<thine_core::Refusal>().is_some() {
             StatusCode::CONFLICT
         } else {
+            // Surface server-side too: on a host this log line is what exists.
+            eprintln!("api error: {e:#}");
             StatusCode::INTERNAL_SERVER_ERROR
         };
         Self(status, format!("{e:#}"))

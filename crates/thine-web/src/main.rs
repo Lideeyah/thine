@@ -42,6 +42,13 @@ struct Cli {
     #[arg(long, default_value = thine_core::chain::TESTNET_ARCHIVAL_RPC)]
     rpc: String,
 
+    /// RPC url for transaction sends. Defaults to the read endpoint; set it
+    /// separately on the public networks, where the archival host and the
+    /// regular host draw on separate rate-limit budgets and a busy demo needs
+    /// both.
+    #[arg(long)]
+    send_rpc: Option<String>,
+
     /// Chain id, which the wallet contract checks against the signed message.
     #[arg(long, default_value = "testnet")]
     chain_id: String,
@@ -100,11 +107,12 @@ async fn main() -> Result<()> {
         "exactly one of --account (fixed) and --demo (hosted) is required"
     );
 
+    let send_rpc = cli.send_rpc.clone().unwrap_or_else(|| cli.rpc.clone());
     let (relayer_account, relayer_key) = relayer_credentials(&cli)?;
     let relayer_id: AccountId = relayer_account
         .parse()
         .with_context(|| format!("{relayer_account} is not a NEAR account id"))?;
-    let relayer = client(&cli.rpc, &cli.chain_id, &relayer_account, &relayer_key)?;
+    let relayer = client(&send_rpc, &cli.chain_id, &relayer_account, &relayer_key)?;
 
     let chain = Chain::with_client(
         Near::custom(cli.rpc.clone(), cli.chain_id.clone()).build(),
@@ -113,7 +121,7 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(AppState {
         chain,
-        rpc: cli.rpc.clone(),
+        rpc: send_rpc.clone(),
         chain_id: cli.chain_id.clone(),
         relayer,
         relayer_id: relayer_id.clone(),
