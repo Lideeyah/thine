@@ -4,13 +4,15 @@ Thine moves an existing NEAR account from seed phrase control to passkey control
 stays the same and no assets move. When the migration completes, the seed phrase key has been
 removed and passkeys are the only way to open the account.
 
-A passkey signs with P-256, and P-256 is not an access key type — NEAR's are ed25519, secp256k1 and
-ML-DSA-65 — so a passkey's authority has to live in contract code. Step 1 replaces the account's
-code with the `wallet-no-sign` contract, one receipt of `UseGlobalContract` plus a call to `w_init`,
-signed by the existing full access key; from then on the account's contract signs nothing itself and
-acts only for its listed delegates. Each passkey controls one delegate: a zero-balance `0s` account
-running `wallet-webauthn-p256`, at an address derived from the passkey's public key. When that
-account's `w_execute_signed` is called, the contract rebuilds the signed payload from
+A passkey signs with P-256, which is not one of NEAR's access key types. Those are ed25519,
+secp256k1 and ML-DSA-65, so a passkey's authority has to live in contract code rather than in a key
+on the account. Step 1 replaces the account's code with the `wallet-no-sign` contract, in one
+receipt carrying `UseGlobalContract` and a call to `w_init`, signed by the existing full access key.
+From then on the account's own contract signs nothing and acts only for its listed delegates.
+
+Each passkey controls one delegate, a zero-balance `0s` account running `wallet-webauthn-p256` at an
+address derived from the contract it runs and its initial state, which carries that passkey's public
+key. When that account's `w_execute_signed` is called, the contract rebuilds the signed payload from
 `authenticator_data` and the SHA-256 of the exact `client_data_json` bytes, requires the WebAuthn
 challenge to be the request message's own hash, and checks the P-256 signature with the
 `p256_verify` host function against the public key fixed in that account's state. The seed phrase
@@ -70,8 +72,8 @@ Three refusals, each one a hard stop that sends nothing:
 
 ## A bug worth recording
 
-The first end-to-end run saw one of two authorised passkeys. Both transactions had succeeded — the
-contract's own event logs showed both `extension_added` events — but the typed contract client
+The first end-to-end run saw one of two authorised passkeys. Both transactions had succeeded, and the
+contract's own event logs showed both `extension_added` events, but the typed contract client
 returns as soon as a call has executed, which is not the same as final, and the next read at final
 finality was a block behind. So the view showed the state from before the user's own action.
 
@@ -164,8 +166,8 @@ cargo run -p thine-web --bin thine-web -- \
 
 Then open **http://localhost:8080**. Not the IP address: a passkey needs a secure context, which
 plain http gives only on loopback, but it also needs a relying party id, and an IP address cannot
-be one — Chrome rejects `127.0.0.1` with "This is an invalid domain". The page says so rather than
-letting that error through.
+be one. Chrome rejects `127.0.0.1` with "This is an invalid domain", and the page says so rather
+than letting that error through.
 
 **See this:** who can open `lydia.sandbox`, the five steps with the irreversible one marked, and
 four buttons. Working down them migrates the account: your own device is asked for a passkey twice
@@ -186,9 +188,9 @@ cargo test --workspace
 ```
 
 **See this:** 63 tests passing. 49 of them are unit tests needing no Docker; the rest drive a
-sandbox, and include the whole migration twice over — once locally and once through the browser
+sandbox. They include the whole migration twice over, once locally and once through the browser
 path, with every passkey signature going through the same DER and `clientDataJSON` conversions a
-real device's output does — plus the same migration again through the HTTP endpoints the page
+real device's output does, and then the same migration again through the HTTP endpoints the page
 calls.
 
 ## Measurements
@@ -213,10 +215,10 @@ Breaking down the 4.2767 TGas receipt on the passkey wallet:
 
 | Cost | Gas |
 |---|---|
-| `P256_VERIFY_BASE` — signature verification | 1.3000 TGas |
-| `WASM_INSTRUCTION` — `clientDataJSON` parsing, decoding, logic | 1.0035 TGas |
+| `P256_VERIFY_BASE`, signature verification | 1.3000 TGas |
+| `WASM_INSTRUCTION`, which is `clientDataJSON` parsing, decoding and logic | 1.0035 TGas |
 | `CONTRACT_LOADING_BYTES` | 0.4588 TGas |
-| `FUNCTION_CALL_BASE` + `NEW_ACTION_RECEIPT` — promise construction | 0.3081 TGas |
+| `FUNCTION_CALL_BASE` + `NEW_ACTION_RECEIPT`, promise construction | 0.3081 TGas |
 | storage, memory, registers, UTF-8 decoding | 0.2590 TGas |
 
 Verification is a flat 1.3 TGas because NEAR verifies P-256 in a host function
@@ -258,7 +260,7 @@ requests a day. `thine fund` scripts the seven requests and the consolidation. N
 neither figure.
 
 Publishing the pair therefore costs most of a day's faucet allowance, and a code hash reference is
-immutable, so a wrong byte cannot be corrected in place — it can only be abandoned and paid for
+immutable, so a wrong byte cannot be corrected in place. It can only be abandoned and paid for
 again, at another 68 NEAR and another day. `thine publish` treats that as a hard precondition rather
 than a matter of care: it refuses unless each artefact matches the digest recorded in the source
 **and** is byte-for-byte identical to what NEAR mainnet currently serves. `thine publish --dry-run`
@@ -276,7 +278,7 @@ under, the total burn, and whether the relayer can cover it.
 - **NEP-591 global contracts.** Both wallet contracts are published by code hash and referenced with
   `UseGlobalContract`. By hash rather than by account id, so the reference is immutable: it is the
   only way back into a migrated account. **Live on testnet**, published by
-  `thine-1a1a75385a8.testnet` on 11 November 2026, burning 67.882131 NEAR — the figure the
+  `thine-1a1a75385a8.testnet` on 11 November 2026, burning 67.882131 NEAR, which is the figure the
   committed measurement predicted to the yoctoNEAR:
 
   | Variant | Testnet global contract code hash |

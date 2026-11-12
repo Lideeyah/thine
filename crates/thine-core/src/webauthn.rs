@@ -48,13 +48,13 @@ pub fn challenge_for(hash: &[u8; 32]) -> String {
 ///
 /// Accepts, in order of how likely each is to turn up:
 ///
-/// - **91 bytes** — the SPKI DER that `getPublicKey()` returns for ES256. For
+/// - **91 bytes**: the SPKI DER that `getPublicKey()` returns for ES256. For
 ///   P-256 this encoding is fixed-length, so the uncompressed point is the
 ///   trailing 65 bytes.
-/// - **65 bytes** — an uncompressed SEC1 point, `0x04 || x || y`. This is what
+/// - **65 bytes**: an uncompressed SEC1 point, `0x04 || x || y`. This is what
 ///   you get from the COSE key's `x` and `y` coordinates concatenated behind an
 ///   `0x04` tag.
-/// - **33 bytes** — already SEC1 compressed; passed through after validation.
+/// - **33 bytes**: already SEC1 compressed; passed through after validation.
 pub fn compressed_public_key(bytes: &[u8]) -> Result<P256CompressedPublicKey> {
     let point: &[u8] = match bytes.len() {
         91 => &bytes[91 - 65..],
@@ -422,9 +422,9 @@ mod tests {
 /// signing is a local, awaited operation. A passkey signature is neither: it
 /// needs a user to touch a device, across at least one HTTP round trip.
 ///
-/// Rather than reimplement the SDK's request construction — which handles nonce
-/// generation and recursive extension wrapping, and would silently drift from
-/// the SDK if copied — this captures the message the SDK itself builds.
+/// Rather than reimplement the SDK's request construction, which handles nonce
+/// generation and recursive extension wrapping and would silently drift from
+/// the SDK if copied, this captures the message the SDK itself builds.
 ///
 /// Two phases:
 ///

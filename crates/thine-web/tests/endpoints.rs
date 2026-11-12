@@ -1,7 +1,7 @@
 //! The server's endpoints, driving a whole migration.
 //!
-//! This goes through the real router — the same routes the page calls, with the
-//! same JSON — against a local sandbox. What it does not exercise is the
+//! This goes through the real router, the same routes the page calls with the
+//! same JSON, against a local sandbox. What it does not exercise is the
 //! browser itself: `navigator.credentials` is replaced by a software P-256 key
 //! producing assertions in the encodings a browser produces. Everything between
 //! that and the chain is the production path.

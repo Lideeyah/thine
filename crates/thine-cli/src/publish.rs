@@ -45,7 +45,7 @@ async fn check_bytes(verify_against_mainnet: bool) -> Result<Vec<Checked>> {
         let code = artifacts::load(variant)?;
         let code_hash = near_kit::CryptoHash::from(artifacts::code_hash(variant)?);
         println!(
-            "  {} — {} bytes, sha256 {}",
+            "  {}, {} bytes, sha256 {}",
             variant.file_name(),
             code.len(),
             variant.sha256_hex()

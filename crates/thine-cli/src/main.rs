@@ -1,4 +1,4 @@
-//! `thine` — move a NEAR account from seed-phrase control to passkey control.
+//! `thine`: move a NEAR account from seed phrase control to passkey control.
 //!
 //! The commands here are the operations. The authority view is the thing the
 //! user actually looks at, and `thine inspect --json` is the data behind it.

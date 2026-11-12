@@ -2,7 +2,7 @@
 
 Run 4 November 2026. All three checks completed. No mainnet transactions were sent, no keys were deleted anywhere, and no secrets are committed.
 
-**Headline: all three checks pass. The check 1 gas estimate in the brief does not hold — the real cost is about three times lower than estimated. Check 3 passes, but its shape is not what the first version of this report claimed: the faucet grants 10 NEAR per request, not 10,000, and it is rate limited, so funding takes seven requests and consolidation rather than one request.**
+**Headline: all three checks pass. The check 1 gas estimate in the brief does not hold. The real cost is about three times lower than estimated. Check 3 passes, but its shape is not what the first version of this report claimed: the faucet grants 10 NEAR per request, not 10,000, and it is rate limited, so funding takes seven requests and consolidation rather than one request.**
 
 ---
 
@@ -27,7 +27,7 @@ The repo's own sandbox tests (`cargo test -p defuse-wallet-sdk --test test`) pas
 
 ---
 
-## Check 1: the P-256 execution hop — MEASURED
+## Check 1: the P-256 execution hop, measured
 
 ### The brief's central premise about this check is wrong, in a helpful direction
 
@@ -35,8 +35,8 @@ The repo's own sandbox tests (`cargo test -p defuse-wallet-sdk --test test`) pas
 
 This is not the case. The repository already ships a complete P-256 WebAuthn signing path behind the `mock` cargo feature:
 
-- `crates/signatures/webauthn/src/mock.rs` — `MockWebauthnSigner`, which builds real `authenticator_data` (rpIdHash, flags, signCount) and `client_data_json`, and signs the correct effective message.
-- `contracts/wallet/signatures/webauthn/src/mock.rs` — `MockWalletWebauthnSigner`, which **implements `WalletSigner<WalletWebauthn<A, UV>>`** and emits the exact JSON proof the contract expects, using `msg.hash()` as the WebAuthn challenge.
+- `crates/signatures/webauthn/src/mock.rs`: `MockWebauthnSigner`, which builds real `authenticator_data` (rpIdHash, flags, signCount) and `client_data_json`, and signs the correct effective message.
+- `contracts/wallet/signatures/webauthn/src/mock.rs`: `MockWalletWebauthnSigner`, which **implements `WalletSigner<WalletWebauthn<A, UV>>`** and emits the exact JSON proof the contract expects, using `msg.hash()` as the WebAuthn challenge.
 - Two P-256 unit fixtures with real vectors in `crates/signatures/webauthn/src/p256.rs` and `contracts/wallet/signatures/webauthn/src/p256.rs`.
 
 Wiring P-256 into the sandbox took **one dev-dependency line** (`defuse-wallet-webauthn` with features `["mock", "p256"]`) and a type alias, not a from-scratch WebAuthn implementation. The benchmark compiled on the first attempt. This should free up a meaningful amount of the remaining build window.
@@ -54,12 +54,12 @@ Benchmark: `crates/wallet/sdk/tests/thine_p256_gas.rs`. Both shapes were run thr
 | `UseGlobalContract(no-sign)` + `w_init` (migration step 1) | 0.4931 TGas | 2 | **2.3307 TGas** | 0.000211 |
 | `DeterministicStateInit` + first `w_execute_signed` (empty request) | 0.8398 TGas | 2 | **12.5626 TGas** | 0.007514 |
 | `AddExtension(passkey 0s)` (migration step 3) | 0.3084 TGas | 1 | **1.8404 TGas** | 0.000184 |
-| **ONE HOP** — `w_execute_signed(0s)` → `FunctionCall` to a second account | 0.3438 TGas | 4 | **6.4881 TGas** | 0.000604 |
-| **TWO HOP** — `w_execute_signed(0s)` → `w_execute_extension(user)` → `FunctionCall` | 0.3559 TGas | 6 | **8.6007 TGas** | 0.000793 |
+| **ONE HOP**, `w_execute_signed(0s)` → `FunctionCall` to a second account | 0.3438 TGas | 4 | **6.4881 TGas** | 0.000604 |
+| **TWO HOP**, `w_execute_signed(0s)` → `w_execute_extension(user)` → `FunctionCall` | 0.3559 TGas | 6 | **8.6007 TGas** | 0.000793 |
 
 Note the 0.0075 NEAR on the state-init row is overwhelmingly the new account's storage stake, not gas.
 
-### Breakdown of the `w_execute_signed` receipt — the granularity the brief asked for
+### Breakdown of the `w_execute_signed` receipt, the granularity the brief asked for
 
 One-hop, the 0s wallet's own receipt (4.2767 TGas):
 
@@ -97,13 +97,13 @@ The measured P-256 two-hop (8.60 TGas) is also well below the mainnet **ed25519*
 
 ---
 
-## Check 2: migrating an account that already has contract state — ALL THREE CASES CONFIRMED
+## Check 2: migrating an account that already has contract state. All three cases confirmed
 
 Test: `crates/wallet/sdk/tests/thine_migration_state.rs`, plus a deliberately ordinary near-sdk probe contract at `contracts/thine-probe/`.
 
 Every claim the brief listed as "established from source, to be confirmed empirically" is confirmed.
 
-### Case 1 — plain account, no contract: SUCCEEDS
+### Case 1, a plain account with no contract: SUCCEEDS
 
 | | storage_usage | staked |
 |---|---|---|
@@ -113,7 +113,7 @@ Every claim the brief listed as "established from source, to be confirmed empiri
 
 Resulting state: one data key, the empty key `b""`, 46 value bytes. So a migrated wallet account costs **300 bytes / 0.003 NEAR** of storage stake, comfortably inside the NEP-448 zero-balance limit of 770 bytes.
 
-### Case 2 — ordinary near-sdk contract holding data, `b"STATE"` included: SUCCEEDS
+### Case 2, an ordinary near-sdk contract holding data, `b"STATE"` included: SUCCEEDS
 
 `w_init` succeeds. `UseGlobalContract` removed the code and **left every data key untouched**, exactly as the brief predicted. No collision, because the wallet's state key is `b""` and near-sdk's default is `b"STATE"`.
 
@@ -133,9 +133,9 @@ Storage accounting:
 | wallet-only baseline (from case 1) | 300 | 0.00300 |
 | **orphaned, unreachable, still paid for** | **635** | **0.00635** |
 
-The 635 orphaned bytes are the four surviving probe keys (`STATE` 8, `alpha` 64, `beta` 128, `gamma` 256 value bytes, plus key bytes and per-record overhead). They are unreachable — the code that could read them is gone — but the account still stakes for them permanently.
+The 635 orphaned bytes are the four surviving probe keys (`STATE` 8, `alpha` 64, `beta` 128, `gamma` 256 value bytes, plus key bytes and per-record overhead). They are unreachable, since the code that could read them is gone, but the account still stakes for them permanently.
 
-### Case 3 — contract occupying the empty key `b""`: FAILS, cleanly, and reverts
+### Case 3, a contract occupying the empty key `b""`: FAILS, cleanly, and reverts
 
 `w_init` panics with exactly the expected message:
 
@@ -178,11 +178,11 @@ Then check whether any returned `values[].key` is the empty string `""` (base64 
 Two things worth surfacing to the user rather than blocking on, since the migration succeeds either way:
 
 - **Orphaned storage.** If `view_state` returns keys other than `b""`, those bytes will be orphaned and paid for forever. Show the user the byte count and the NEAR figure before they commit.
-- **Storage freed.** If the account currently has code (`code_hash` is not all-ones), migrating frees that code's storage stake — 1.13 NEAR in the case 2 example. That is a refund to the user and worth showing.
+- **Storage freed.** If the account currently has code (`code_hash` is not all-ones), migrating frees that code's storage stake, 1.13 NEAR in the case 2 example. That is a refund to the user and worth showing.
 
 ---
 
-## Check 3: can we accumulate testnet NEAR — YES, but not in one request
+## Check 3: can we accumulate testnet NEAR? Yes, but not in one request
 
 **This section was wrong in the first version of this report and has been corrected.** The original
 claimed the faucet grants 10,000 NEAR per request with no rate limit. Both halves were wrong: the
@@ -200,7 +200,7 @@ The docs publish no figures at all; they say only "a small amount". Measured:
 | Endpoint | `POST https://helper.testnet.near.org/account` |
 | Body | `{"newAccountId": "<name>.testnet", "newAccountPublicKey": "ed25519:<base58>"}` |
 | **Grant per request** | **10 NEAR** (`10000000000000000000000000` yocto, verified by `view_account`) |
-| Creates the account? | Yes — it creates and funds a new named account |
+| Creates the account? | Yes. It creates and funds a new named account |
 | Latency | ~2.7–3.7 s per request |
 | **Rate limit** | **Approximately 10 requests per day.** The 11th returned `429 Too Many Requests: Rate limit exceeded, retry in 11 hours.` |
 | Consolidation | **Required.** Each grant lands in its own new account and must be swept. |
@@ -265,11 +265,11 @@ Listed because the brief asked for them explicitly.
 
 4. **Mainnet is at protocol version 87, not 86.** The brief states 86 in three places. This matters for one of its own claims: "From protocol version 87 a gas key cannot sign the inner delegate action of a meta transaction; mainnet is at 86 today." Mainnet is at 87, so **that restriction is already live on mainnet**. The universal-accounts conclusion is unchanged, since 88 is still ahead of mainnet, but the stated numbers are stale. Testnet and the sandbox are both at 88.
 
-5. **The mainnet table's sizes and sha256 hashes are exactly right** — verified byte-for-byte. But the labelling needs one refinement: `0sfa7a4d20…` and `0saf343be2…` are *global-deployer instances* that publish the wallet WASM as a **global contract by account id**. They are not themselves wallet contracts (their own `contract_source_metadata` reports `standard: "global-deployer"`), and their own code resolves through `0s7876eb5ba4f1d97eb53a53903a86bd211c71b3b1` to global contract hash `37osLHRQ8KsJx1YwXJbPcd2wfKHP5KjtKawnrfjjaD3J`.
+5. **The mainnet table's sizes and sha256 hashes are exactly right**, verified byte-for-byte. But the labelling needs one refinement: `0sfa7a4d20…` and `0saf343be2…` are *global-deployer instances* that publish the wallet WASM as a **global contract by account id**. They are not themselves wallet contracts (their own `contract_source_metadata` reports `standard: "global-deployer"`), and their own code resolves through `0s7876eb5ba4f1d97eb53a53903a86bd211c71b3b1` to global contract hash `37osLHRQ8KsJx1YwXJbPcd2wfKHP5KjtKawnrfjjaD3J`.
 
-6. **Those two sha256 hashes are not published by code hash on mainnet.** Querying `view_global_contract_code` for either returns `NO_GLOBAL_CONTRACT_CODE`. So the brief's "Publish by code hash rather than by account id" is the right instruction for *our own* testnet deploy, but on mainnet today the only way to reference the existing deployments is **by account id**. This is directly relevant to open question 5 (whether to publish your own immutable mainnet copies at ~68 NEAR) — referencing the existing ones by code hash is not currently an option.
+6. **Those two sha256 hashes are not published by code hash on mainnet.** Querying `view_global_contract_code` for either returns `NO_GLOBAL_CONTRACT_CODE`. So the brief's "Publish by code hash rather than by account id" is the right instruction for *our own* testnet deploy, but on mainnet today the only way to reference the existing deployments is **by account id**. This is directly relevant to open question 5 (whether to publish your own immutable mainnet copies at ~68 NEAR), because referencing the existing ones by code hash is not currently an option.
 
-7. **The deployed artefacts are from commit `32a7836f825e8c984c26149f4456793ec7e3d49a`**, not `main` HEAD. Building `main` with `--cfg=near` produces different sizes (349,875 B for no-sign vs 308,482 deployed; 421,163 B for p256 vs 370,286 deployed) — partly the commit difference, partly because `cargo near build` post-processes and plain cargo does not. Build from that commit with `cargo near build` if you need byte-identical artefacts.
+7. **The deployed artefacts are from commit `32a7836f825e8c984c26149f4456793ec7e3d49a`**, not `main` HEAD. Building `main` with `--cfg=near` produces different sizes (349,875 B for no-sign vs 308,482 deployed; 421,163 B for p256 vs 370,286 deployed). That is partly the commit difference and partly because `cargo near build` post-processes while plain cargo does not. Build from that commit with `cargo near build` if you need byte-identical artefacts.
 
 8. The brief says `res` must be created manually and that `read_wasm` resolves `CARGO_MANIFEST_DIR/../../../` plus `DEFUSE_USE_OUT_DIR` defaulting to `./res`. Both confirmed exactly. Worth adding that `.cargo/config.toml` already sets `DEFUSE_USE_OUT_DIR=res` relative to the workspace root, and that filenames must use **hyphens** (`defuse-wallet-no-sign.wasm`), not the underscored cargo output names.
 
@@ -281,11 +281,11 @@ Listed because the brief asked for them explicitly.
 
 Inside the `intents` clone:
 
-- `crates/wallet/sdk/tests/thine_p256_gas.rs` — check 1 benchmark, full per-receipt and per-cost-category gas reporting, machine-readable JSON per measurement.
-- `crates/wallet/sdk/tests/thine_migration_state.rs` — check 2, all three cases plus the revert question and storage accounting.
-- `crates/wallet/sdk/tests/thine_publish_cost.rs` — check 3 publish-cost measurement against the real mainnet bytes.
-- `contracts/thine-probe/` — the ordinary near-sdk contract used to set up check 2's three starting states.
-- `res/mainnet/*.wasm` — the exact mainnet-deployed artefacts, for reproducible cost measurement.
+- `crates/wallet/sdk/tests/thine_p256_gas.rs`: check 1 benchmark, full per-receipt and per-cost-category gas reporting, machine-readable JSON per measurement.
+- `crates/wallet/sdk/tests/thine_migration_state.rs`: check 2, all three cases plus the revert question and storage accounting.
+- `crates/wallet/sdk/tests/thine_publish_cost.rs`: check 3 publish-cost measurement against the real mainnet bytes.
+- `contracts/thine-probe/`: the ordinary near-sdk contract used to set up check 2's three starting states.
+- `res/mainnet/*.wasm`: the exact mainnet-deployed artefacts, for reproducible cost measurement.
 - One line added to `crates/wallet/sdk/Cargo.toml` dev-dependencies, and one workspace member.
 
 All three are written as committed, repeatable benchmarks rather than one-off scripts, so they can move into the Thine repository as the reproducible measurements the submission ships.
@@ -308,4 +308,4 @@ cargo test -p defuse-wallet-sdk --test thine_publish_cost    -- --nocapture --te
 
 ## Not done
 
-As instructed, I stopped at verification and did not begin building the migration flow. Steps 2, 4 and 5 of the five-step architecture were exercised only as far as checks 1 and 2 required — step 4 (proving a passkey works via `w_execute_signed` with a promise to `w_execute_extension`) is fully demonstrated by the two-hop benchmark, but step 5 (`RemoveExtension` then `DeleteKey` on every full access key) was deliberately not run anywhere, per the brief.
+As instructed, I stopped at verification and did not begin building the migration flow. Steps 2, 4 and 5 of the five-step architecture were exercised only as far as checks 1 and 2 required. Step 4 (proving a passkey works via `w_execute_signed` with a promise to `w_execute_extension`) is fully demonstrated by the two-hop benchmark, but step 5 (`RemoveExtension` then `DeleteKey` on every full access key) was deliberately not run anywhere, per the brief.

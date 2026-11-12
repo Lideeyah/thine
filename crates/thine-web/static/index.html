@@ -116,7 +116,7 @@ let report = null;
 function render(r) {
   report = r;
   document.getElementById('subtitle').textContent =
-    `${r.account.account_id} on ${r.network} — balance ${r.account.balance.near.toFixed(4)} NEAR, ` +
+    `${r.account.account_id} on ${r.network}. Balance ${r.account.balance.near.toFixed(4)} NEAR, ` +
     `read at block ${r.read_at.block_height}`;
 
   const holders = document.getElementById('holders');
@@ -131,13 +131,15 @@ function render(r) {
     li.dataset.status = h.status.status;
     let label = h.kind.kind === 'full_access_key'
       ? `full access key ${h.kind.public_key}`
-      : h.kind.kind === 'self_extension'
-        ? 'the account itself, via its full access keys'
-        : `passkey ${h.kind.account_id}`;
+      : h.kind.kind === 'function_call_key'
+        ? `function call key ${h.kind.public_key} for ${h.kind.receiver_id}`
+        : h.kind.kind === 'self_extension'
+          ? 'the account itself, via its full access keys'
+          : `passkey ${h.kind.account_id}`;
     let note = '';
-    if (h.status.status === 'proven') note = ' — has signed';
-    if (h.status.status === 'live') note = ' — reachable, but has never signed; cannot be relied on';
-    if (h.status.status === 'unreachable') note = ` — UNREACHABLE: ${h.status.reason}`;
+    if (h.status.status === 'proven') note = '. Has signed';
+    if (h.status.status === 'live') note = '. Reachable, but has never signed; cannot be relied on';
+    if (h.status.status === 'unreachable') note = `. UNREACHABLE: ${h.status.reason}`;
     li.textContent = label + note;
     holders.append(li);
   }
@@ -161,9 +163,9 @@ function render(r) {
     const cost = r.costs.find(c => c.step_id === step.id);
     const bits = [step.title];
     if (step.progress) bits.push(`(${step.progress[0]} of ${step.progress[1]})`);
-    if (step.state === 'current') bits.push('— NOW');
-    if (step.state === 'done') bits.push('— done');
-    if (step.irreversible) bits.push('— cannot be undone');
+    if (step.state === 'current') bits.push('(now)');
+    if (step.state === 'done') bits.push('(done)');
+    if (step.irreversible) bits.push('(cannot be undone)');
     const head = document.createElement('div');
     head.textContent = bits.join(' ');
     li.append(head);

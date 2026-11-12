@@ -79,8 +79,8 @@ impl Variant {
     ///
     /// These are global-deployer instances: `UseGlobalContract` with the
     /// account id resolves to the wallet WASM. The same bytes are **not**
-    /// available by code hash on mainnet — `view_global_contract_code` for
-    /// either digest returns `NO_GLOBAL_CONTRACT_CODE` — so this account id is
+    /// available by code hash on mainnet, where `view_global_contract_code` for
+    /// either digest returns `NO_GLOBAL_CONTRACT_CODE`, so this account id is
     /// the only on-chain reference to compare against.
     pub const fn mainnet_reference(self) -> Option<&'static str> {
         match self {

@@ -3,8 +3,8 @@
 //! The local end-to-end test proves the chain works. This proves the *browser
 //! path* works: the same migration, but every passkey signature goes through
 //! exactly the conversions a real `navigator.credentials.get()` response needs
-//! — a DER-encoded signature, a `clientDataJSON` document, base64url
-//! `authenticatorData` — and nothing takes the shortcut of handing the SDK a
+//! (a DER-encoded signature, a `clientDataJSON` document, base64url
+//! `authenticatorData`), and nothing takes the shortcut of handing the SDK a
 //! native signature.
 //!
 //! What stands in for the authenticator is a software P-256 key. That is the

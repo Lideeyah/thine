@@ -6,7 +6,7 @@
 //! verified a real P-256 signature and acted on it.
 //!
 //! Thine records those transactions here. The record is a pointer, not the
-//! evidence itself — every proof is re-verified against the chain before it
+//! evidence itself. Every proof is re-verified against the chain before it
 //! counts, by fetching the transaction and checking that it really was a
 //! successful `w_execute_signed` on that exact account. A hand-edited ledger
 //! therefore buys nothing.

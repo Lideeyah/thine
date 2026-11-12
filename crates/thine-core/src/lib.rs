@@ -21,8 +21,8 @@
 //!
 //! Thine therefore refuses to delete keys until at least
 //! [`authority::MIN_PROVEN_PASSKEYS`] independent passkeys have each completed
-//! a successful `w_execute_signed` — proof that a human can still sign, rather
-//! than proof that an entry exists in a set.
+//! a successful `w_execute_signed`, which is proof that a human can still sign
+//! rather than proof that an entry exists in a set.
 
 pub mod artifacts;
 pub mod authority;
