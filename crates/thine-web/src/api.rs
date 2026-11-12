@@ -6,19 +6,20 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::State,
-    http::StatusCode,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 use thine_core::{
-    AccountReport,
+    AccountReport, ProofLedger,
     migration::SigningRoute,
     webauthn::{BrowserAssertion, challenge_for, compressed_public_key, proof_from_browser},
 };
+use tokio::sync::Mutex;
 
-use crate::{AppState, Pending};
+use crate::{AppState, Pending, session::SessionState};
 
 /// An error with a status code and a message the page can show.
 pub struct ApiError(StatusCode, String);
@@ -44,10 +45,142 @@ impl From<anyhow::Error> for ApiError {
 
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-/// The authority view. Everything the page renders comes from here.
-pub async fn account(State(s): State<Arc<AppState>>) -> ApiResult<AccountReport> {
-    let ledger = s.ledger.lock().expect("poisoned").clone();
-    Ok(Json(s.chain.account_report(&s.user, &ledger).await?))
+fn bad(msg: impl Into<String>) -> ApiError {
+    ApiError(StatusCode::BAD_REQUEST, msg.into())
+}
+
+/// The session a request addresses. The fixed mode registers one under
+/// [`AppState::LOCAL_TOKEN`], which is also the default when no header is
+/// sent, so the sandbox path works without the page thinking about sessions.
+fn session_of(state: &AppState, headers: &HeaderMap) -> Result<Arc<Mutex<SessionState>>, ApiError> {
+    let token = headers
+        .get("x-thine-session")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or(AppState::LOCAL_TOKEN);
+    state.session(token).ok_or_else(|| {
+        ApiError(
+            StatusCode::UNAUTHORIZED,
+            "no such session; open one first".to_string(),
+        )
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Session-free reads
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct Meta {
+    pub network: String,
+    /// Whether this server hands out throwaway accounts to migrate.
+    pub demo: bool,
+    /// A real account id, for the entry screen's placeholder.
+    pub example_account: String,
+}
+
+pub async fn meta(State(s): State<Arc<AppState>>) -> Json<Meta> {
+    Json(Meta {
+        network: s.chain_id.clone(),
+        demo: s.demo,
+        example_account: s.relayer_id.to_string(),
+    })
+}
+
+/// Look at any account's authority, read-only. This is the entry screen:
+/// nothing is signed and nothing is connected.
+pub async fn inspect(
+    State(s): State<Arc<AppState>>,
+    Path(account_id): Path<String>,
+) -> ApiResult<AccountReport> {
+    let account_id: near_kit::AccountId = account_id
+        .parse()
+        .map_err(|_| bad("not a NEAR account id"))?;
+
+    let facts = s.chain.account_facts(&account_id).await?;
+    if !facts.exists {
+        return Err(ApiError(
+            StatusCode::NOT_FOUND,
+            format!("no account with that id exists on {}", s.chain_id),
+        ));
+    }
+
+    // A session's own account reads with its ledger, so proofs and removals
+    // render; any other account reads with an empty one.
+    let ledger = {
+        let sessions = s.sessions.lock().expect("poisoned");
+        let mut found = None;
+        for session in sessions.values() {
+            if let Ok(guard) = session.try_lock()
+                && guard.user == account_id
+            {
+                found = Some(guard.ledger.clone());
+                break;
+            }
+        }
+        found.unwrap_or_else(|| ProofLedger::new(account_id.as_str()))
+    };
+
+    Ok(Json(s.chain.account_report(&account_id, &ledger).await?))
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct SessionOut {
+    pub token: String,
+    pub account_id: String,
+}
+
+/// Open a demo session: a fresh, funded throwaway account to migrate.
+pub async fn open_session(State(s): State<Arc<AppState>>) -> ApiResult<SessionOut> {
+    if !s.demo {
+        // Fixed mode has exactly one session, already open.
+        let session = s.session(AppState::LOCAL_TOKEN).ok_or_else(|| {
+            ApiError(
+                StatusCode::CONFLICT,
+                "this server is not in demo mode and has no fixed account either".to_string(),
+            )
+        })?;
+        let account_id = session.lock().await.user.to_string();
+        return Ok(Json(SessionOut {
+            token: AppState::LOCAL_TOKEN.to_string(),
+            account_id,
+        }));
+    }
+
+    let (user, user_client) = crate::session::create_demo_account(&s).await?;
+    let token: String = URL_SAFE_NO_PAD
+        .encode(near_kit::signer::SecretKey::generate_ed25519().to_string())
+        .chars()
+        .take(32)
+        .collect();
+
+    let session = SessionState::new(&s, user.clone(), user_client);
+    s.insert_session(token.clone(), session);
+
+    Ok(Json(SessionOut {
+        token,
+        account_id: user.to_string(),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Session-scoped: the migration itself
+// ---------------------------------------------------------------------------
+
+/// The session's own authority view. Everything the page renders comes from
+/// here.
+pub async fn account(
+    State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult<AccountReport> {
+    let session = session_of(&s, &headers)?;
+    let guard = session.lock().await;
+    Ok(Json(
+        s.chain.account_report(&guard.user, &guard.ledger).await?,
+    ))
 }
 
 #[derive(Serialize)]
@@ -57,8 +190,13 @@ pub struct StepDone {
     pub tgas: f64,
 }
 
-pub async fn step1(State(s): State<Arc<AppState>>) -> ApiResult<StepDone> {
-    let out = s.migration.step1_become_wallet(&s.user_client).await?;
+pub async fn step1(State(s): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult<StepDone> {
+    let session = session_of(&s, &headers)?;
+    let guard = session.lock().await;
+    let out = guard
+        .migration
+        .step1_become_wallet(&guard.user_client)
+        .await?;
     Ok(Json(StepDone {
         step: out.step,
         tgas: out.tgas(),
@@ -82,16 +220,21 @@ pub struct Derived {
 fn decode(b64: &str) -> Result<Vec<u8>, ApiError> {
     URL_SAFE_NO_PAD
         .decode(b64.trim_end_matches('='))
-        .map_err(|e| ApiError(StatusCode::BAD_REQUEST, format!("not base64url: {e}")))
+        .map_err(|e| bad(format!("not base64url: {e}")))
 }
 
 /// Show the user the address their passkey will control, before creating it.
 pub async fn derive(
     State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(input): Json<PublicKeyIn>,
 ) -> ApiResult<Derived> {
+    let session = session_of(&s, &headers)?;
+    let guard = session.lock().await;
     let public_key = compressed_public_key(&decode(&input.public_key)?)?;
-    let (wallet, _) = s.migration.browser_passkey_wallet(public_key, &s.relayer);
+    let (wallet, _) = guard
+        .migration
+        .browser_passkey_wallet(public_key, &s.relayer);
     let account_id = wallet.real_account_id().clone();
     let exists = s.chain.account_facts(&account_id).await?.exists;
 
@@ -121,22 +264,27 @@ pub struct BeginOut {
 /// Build the request the passkey must sign, and hand out its challenge.
 pub async fn begin(
     State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(input): Json<BeginIn>,
 ) -> ApiResult<BeginOut> {
+    let session = session_of(&s, &headers)?;
+    let mut guard = session.lock().await;
+
     let is_proof = match input.purpose.as_str() {
         "create" => false,
         "prove" => true,
         other => {
-            return Err(ApiError(
-                StatusCode::BAD_REQUEST,
-                format!("purpose must be \"create\" or \"prove\", not {other:?}"),
-            ));
+            return Err(bad(format!(
+                "purpose must be \"create\" or \"prove\", not {other:?}"
+            )));
         }
     };
 
     let raw = decode(&input.public_key)?;
     let public_key = compressed_public_key(&raw)?;
-    let (wallet, passkey) = s.migration.browser_passkey_wallet(public_key, &s.relayer);
+    let (wallet, passkey) = guard
+        .migration
+        .browser_passkey_wallet(public_key, &s.relayer);
     let account_id = wallet.real_account_id().clone();
 
     let exists = s.chain.account_facts(&account_id).await?.exists;
@@ -146,13 +294,13 @@ pub async fn begin(
     } else {
         SigningRoute::Direct
     };
-    let (msg, challenge) = s
+    let (msg, challenge) = guard
         .migration
         .capture_signing_request(&wallet, &passkey, route)
         .await?;
 
     let token = URL_SAFE_NO_PAD.encode(challenge);
-    s.pending.lock().expect("poisoned").insert(
+    guard.pending.insert(
         token.clone(),
         Pending {
             msg,
@@ -196,19 +344,16 @@ pub struct FinishOut {
 /// Take what the authenticator signed, and put it on chain.
 pub async fn finish(
     State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(input): Json<FinishIn>,
 ) -> ApiResult<FinishOut> {
-    let pending = s
+    let session = session_of(&s, &headers)?;
+    let mut guard = session.lock().await;
+
+    let pending = guard
         .pending
-        .lock()
-        .expect("poisoned")
         .remove(&input.token)
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::BAD_REQUEST,
-                "no pending request for that token; it may already have been used".to_string(),
-            )
-        })?;
+        .ok_or_else(|| bad("no pending request for that token; it may already have been used"))?;
 
     let assertion = BrowserAssertion {
         authenticator_data: decode(&input.authenticator_data)?,
@@ -220,9 +365,11 @@ pub async fn finish(
     let proof = proof_from_browser(&assertion, &pending.challenge)?;
 
     let public_key = compressed_public_key(&pending.public_key)?;
-    let (wallet, _) = s.migration.browser_passkey_wallet(public_key, &s.relayer);
+    let (wallet, _) = guard
+        .migration
+        .browser_passkey_wallet(public_key, &s.relayer);
 
-    let (out, record) = s
+    let (out, record) = guard
         .migration
         .submit_browser_proof(
             &s.relayer,
@@ -236,9 +383,9 @@ pub async fn finish(
 
     // Only a routed request is evidence of anything.
     if pending.is_proof {
-        let mut ledger = s.ledger.lock().expect("poisoned");
-        ledger.record(record);
-        ledger.save(&s.ledger_path)?;
+        guard.ledger.record(record);
+        let path = ProofLedger::path_for(&s.state_dir, guard.user.as_str());
+        guard.ledger.save(path).ok();
     }
 
     Ok(Json(FinishOut {
@@ -257,16 +404,19 @@ pub struct AccountIn {
 
 pub async fn step3(
     State(s): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(input): Json<AccountIn>,
 ) -> ApiResult<StepDone> {
+    let session = session_of(&s, &headers)?;
+    let guard = session.lock().await;
     let account_id = input
         .account_id
         .parse()
-        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "not an account id".to_string()))?;
+        .map_err(|_| bad("not an account id"))?;
 
-    let out = s
+    let out = guard
         .migration
-        .step3_add_extension(&s.user_client, &account_id)
+        .step3_add_extension(&guard.user_client, &account_id)
         .await?;
 
     Ok(Json(StepDone {
@@ -281,20 +431,76 @@ pub struct FinalOut {
     pub steps: Vec<StepDone>,
 }
 
+async fn run_step5_part(
+    s: &AppState,
+    headers: &HeaderMap,
+    which: &str,
+) -> Result<Json<FinalOut>, ApiError> {
+    let session = session_of(s, headers)?;
+    let mut guard = session.lock().await;
+
+    let ledger = guard.ledger.clone();
+    let (outs, removals) = match which {
+        "self-hold" => {
+            guard
+                .migration
+                .step5_remove_self_hold(&guard.user_client, &ledger)
+                .await?
+        }
+        _ => {
+            guard
+                .migration
+                .step5_delete_keys(&guard.user_client, &ledger)
+                .await?
+        }
+    };
+
+    for removal in removals {
+        guard.ledger.record_removal(removal);
+    }
+    let path = ProofLedger::path_for(&s.state_dir, guard.user.as_str());
+    guard.ledger.save(path).ok();
+
+    Ok(Json(FinalOut {
+        steps: outs
+            .into_iter()
+            .map(|o| StepDone {
+                step: o.step,
+                tgas: o.tgas(),
+                tx_hash: o.tx_hash,
+            })
+            .collect(),
+    }))
+}
+
+/// Step 5, first part: stop the account delegating to itself.
+pub async fn step5a(State(s): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult<FinalOut> {
+    run_step5_part(&s, &headers, "self-hold").await
+}
+
+/// Step 5, second part: delete every full access key. Irreversible.
+pub async fn step5b(State(s): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult<FinalOut> {
+    run_step5_part(&s, &headers, "delete-keys").await
+}
+
 /// The irreversible step. Refuses from `thine-core`, not from here.
-pub async fn step5(State(s): State<Arc<AppState>>) -> ApiResult<FinalOut> {
-    let ledger = s.ledger.lock().expect("poisoned").clone();
-    let (outs, removals) = s.migration.step5_finalise(&s.user_client, &ledger).await?;
+pub async fn step5(State(s): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult<FinalOut> {
+    let session = session_of(&s, &headers)?;
+    let mut guard = session.lock().await;
+
+    let ledger = guard.ledger.clone();
+    let (outs, removals) = guard
+        .migration
+        .step5_finalise(&guard.user_client, &ledger)
+        .await?;
 
     // Keep the pointers to what was removed. The view re-verifies each against
     // the chain before rendering it, so these are lookup keys, not assertions.
-    {
-        let mut ledger = s.ledger.lock().expect("poisoned");
-        for removal in removals {
-            ledger.record_removal(removal);
-        }
-        ledger.save(&s.ledger_path)?;
+    for removal in removals {
+        guard.ledger.record_removal(removal);
     }
+    let path = ProofLedger::path_for(&s.state_dir, guard.user.as_str());
+    guard.ledger.save(path).ok();
 
     Ok(Json(FinalOut {
         steps: outs

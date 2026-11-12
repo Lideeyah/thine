@@ -36,8 +36,25 @@ use near_kit::{
 use near_kit_sandbox::SandboxConfig;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use thine_core::{Chain, ProofLedger, Variant, artifacts, migration::Migration};
+use thine_core::{Chain, Variant, artifacts};
 use tower::ServiceExt;
+
+fn test_state(chain: Chain, relayer: &Near, dir: std::path::PathBuf) -> Arc<thine_web::AppState> {
+    Arc::new(thine_web::AppState {
+        chain,
+        rpc: "http://localhost".to_string(),
+        chain_id: "sandbox".to_string(),
+        relayer: relayer.clone(),
+        relayer_id: relayer.account_id().to_owned(),
+        no_sign_hash: CryptoHash::from(artifacts::code_hash(Variant::NoSign).unwrap()),
+        p256_hash: artifacts::code_hash(Variant::WebauthnP256).unwrap(),
+        state_dir: dir,
+        demo: false,
+        session_cap: 0,
+        sessions_created: std::sync::atomic::AtomicUsize::new(0),
+        sessions: Mutex::new(HashMap::new()),
+    })
+}
 
 const RP_ID_HASH: [u8; 32] =
     hex_literal::hex!("49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d9763");
@@ -142,21 +159,11 @@ async fn the_endpoints_drive_the_whole_migration() {
     let (user, user_client) = fresh_account(&relayer).await;
 
     let dir = std::env::temp_dir().join(format!("thine-web-test-{}", std::process::id()));
-    let state = Arc::new(thine_web::AppState {
-        chain: chain.clone(),
-        relayer: relayer.clone(),
-        user: user.clone(),
-        user_client,
-        migration: Migration::new(
-            chain.clone(),
-            user.clone(),
-            CryptoHash::from(artifacts::code_hash(Variant::NoSign).unwrap()),
-            artifacts::code_hash(Variant::WebauthnP256).unwrap(),
-        ),
-        ledger: Mutex::new(ProofLedger::new(user.as_str())),
-        ledger_path: ProofLedger::path_for(&dir, user.as_str()),
-        pending: Mutex::new(HashMap::new()),
-    });
+    let state = test_state(chain.clone(), &relayer, dir.clone());
+    state.insert_session(
+        thine_web::AppState::LOCAL_TOKEN,
+        thine_web::session::SessionState::new(&state, user.clone(), user_client),
+    );
     let app = thine_web::router(state);
 
     // --- the page loads ---
@@ -169,17 +176,30 @@ async fn the_endpoints_drive_the_whole_migration() {
     let html =
         String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
     assert!(
-        html.contains("navigator.credentials.create"),
-        "the page must register passkeys"
-    );
-    assert!(html.contains("alg: -7"), "the page must ask for ES256 only");
-    assert!(
         html.contains("can never add a key, deploy a contract, stake natively"),
         "the standing lines live in the page"
     );
     assert!(
-        html.contains("!== 'passkey_controlled'"),
-        "and render on the post-migration view only"
+        html.contains("deploy a contract, stake natively, create a subaccount, or delete itself"),
+        "the permanence lines live in the page"
+    );
+
+    let res = app
+        .clone()
+        .oneshot(Request::get("/app.js").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let js =
+        String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+    assert!(
+        js.contains("navigator.credentials.create"),
+        "the page must register passkeys"
+    );
+    assert!(js.contains("alg: -7"), "the page must ask for ES256 only");
+    assert!(
+        js.contains("'passkey_controlled'"),
+        "the standing lines gate to the migrated state"
     );
 
     // --- the view, before anything ---
@@ -392,16 +412,15 @@ async fn a_token_cannot_be_replayed() {
     let chain = Chain::with_client(relayer.clone(), "sandbox");
     let user: AccountId = relayer.account_id().to_owned();
 
-    let state = Arc::new(thine_web::AppState {
-        chain: chain.clone(),
-        relayer: relayer.clone(),
-        user: user.clone(),
-        user_client: relayer.clone(),
-        migration: Migration::new(chain, user.clone(), CryptoHash::from([0u8; 32]), [0u8; 32]),
-        ledger: Mutex::new(ProofLedger::new(user.as_str())),
-        ledger_path: std::env::temp_dir().join("thine-replay-test.json"),
-        pending: Mutex::new(HashMap::new()),
-    });
+    let state = test_state(
+        chain.clone(),
+        &relayer,
+        std::env::temp_dir().join("thine-replay-test"),
+    );
+    state.insert_session(
+        thine_web::AppState::LOCAL_TOKEN,
+        thine_web::session::SessionState::new(&state, user.clone(), relayer.clone()),
+    );
     let app = thine_web::router(state);
 
     let (status, out) = post(

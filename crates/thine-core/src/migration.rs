@@ -275,17 +275,25 @@ impl Migration {
         user_client: &Near,
         ledger: &ProofLedger,
     ) -> Result<(Vec<StepOutcome>, Vec<RemovalRecord>)> {
+        let (mut outcomes, mut removals) = self.step5_remove_self_hold(user_client, ledger).await?;
+        let (more_outcomes, more_removals) = self.step5_delete_keys(user_client, ledger).await?;
+        outcomes.extend(more_outcomes);
+        removals.extend(more_removals);
+        Ok((outcomes, removals))
+    }
+
+    /// Step 5, first part: the account stops delegating to itself.
+    ///
+    /// Still recoverable while a key exists, but gated exactly as hard as the
+    /// deletion, because its only purpose is to be followed by it.
+    pub async fn step5_remove_self_hold(
+        &self,
+        user_client: &Near,
+        ledger: &ProofLedger,
+    ) -> Result<(Vec<StepOutcome>, Vec<RemovalRecord>)> {
         // Hard refusal. Re-read the chain; do not trust a cached view.
         let view = self.chain.authority_view(&self.user, ledger).await?;
         view.guard_key_deletion()?;
-
-        let keys = self.chain.full_access_keys(&self.user).await?;
-        if keys.is_empty() {
-            bail!(
-                "{} has no full access keys left; step 5 is already done",
-                self.user
-            );
-        }
 
         let mut outcomes = Vec::new();
         let mut removals = Vec::new();
@@ -316,8 +324,32 @@ impl Migration {
             recorded_at: crate::now_rfc3339(),
         });
         outcomes.push(summarise("5a: drop the self-extension", &outcome));
+        Ok((outcomes, removals))
+    }
 
-        // Then the keys themselves.
+    /// Step 5, second part: delete every full access key. Irreversible.
+    pub async fn step5_delete_keys(
+        &self,
+        user_client: &Near,
+        ledger: &ProofLedger,
+    ) -> Result<(Vec<StepOutcome>, Vec<RemovalRecord>)> {
+        // The same hard refusal, re-read again: the gate holds for each part
+        // on the chain's current state, not on what the last part saw.
+        let view = self.chain.authority_view(&self.user, ledger).await?;
+        view.guard_key_deletion()?;
+
+        let keys = self.chain.full_access_keys(&self.user).await?;
+        if keys.is_empty() {
+            bail!(
+                "{} has no full access keys left; step 5 is already done",
+                self.user
+            );
+        }
+
+        let mut outcomes = Vec::new();
+        let mut removals = Vec::new();
+
+        // The keys themselves.
         for key in &keys {
             let public_key: near_kit::signer::PublicKey = key
                 .parse()

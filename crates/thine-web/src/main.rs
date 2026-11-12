@@ -4,14 +4,14 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex as StdMutex, atomic::AtomicUsize},
 };
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use near_kit::{AccountId, CryptoHash, Near};
-use thine_core::{Chain, ProofLedger, Variant, artifacts, migration::Migration};
-use thine_web::{AppState, router};
+use thine_core::{Chain, ProofLedger, Variant, artifacts};
+use thine_web::{AppState, router, session::SessionState};
 
 #[derive(Parser)]
 #[command(
@@ -19,13 +19,26 @@ use thine_web::{AppState, router};
     about = "Serve Thine's authority view and the passkey endpoints."
 )]
 struct Cli {
-    /// The account to migrate. Its full access key must be in --state-dir.
+    /// Fixed mode: migrate this one account, whose full access key must be in
+    /// --state-dir as user-<chain-id>.json. This is the local sandbox path.
     #[arg(long)]
-    account: String,
+    account: Option<String>,
+
+    /// Demo mode: any visitor can open a session, and the relayer creates
+    /// them a funded throwaway testnet account to migrate. This is the hosted
+    /// judge path. Exactly one of --account and --demo is required.
+    #[arg(long)]
+    demo: bool,
+
+    /// How many throwaway accounts this process will ever create, which caps
+    /// what a hostile visitor can drain from the relayer.
+    #[arg(long, default_value_t = 150)]
+    session_cap: usize,
 
     /// NEAR RPC url. Point this at a sandbox for local work. The default is
     /// the archival endpoint so removed rows render from a clean clone: a
     /// non-archival node forgets the removal transactions after a few days.
+    /// Verified to accept transaction sends as well as historical reads.
     #[arg(long, default_value = thine_core::chain::TESTNET_ARCHIVAL_RPC)]
     rpc: String,
 
@@ -33,10 +46,12 @@ struct Cli {
     #[arg(long, default_value = "testnet")]
     chain_id: String,
 
-    /// Where Thine keeps the relayer key, the user key and the proof ledger.
+    /// Where Thine keeps key files and proof ledgers.
     #[arg(long, default_value = ".thine")]
     state_dir: PathBuf,
 
+    /// Overridden by the PORT environment variable when set, which is how the
+    /// hosting platform assigns one.
     #[arg(long, default_value = "127.0.0.1:8080")]
     listen: SocketAddr,
 }
@@ -48,9 +63,9 @@ struct Keyed {
     secret_key: String,
 }
 
-fn client(rpc: &str, chain_id: &str, keyed: &Keyed) -> Result<Near> {
+fn client(rpc: &str, chain_id: &str, account_id: &str, secret_key: &str) -> Result<Near> {
     Near::custom(rpc.to_string(), chain_id.to_string())
-        .credentials(&keyed.secret_key, keyed.account_id.clone())
+        .credentials(secret_key, account_id)
         .context("credentials are not usable")
         .map(near_kit::NearBuilder::build)
 }
@@ -62,69 +77,110 @@ fn load_keyed(dir: &Path, name: &str) -> Result<Keyed> {
     serde_json::from_slice(&bytes).with_context(|| format!("parsing {}", path.display()))
 }
 
+/// The relayer key: from the environment on a host, from the state directory
+/// locally. Never from the repository.
+fn relayer_credentials(cli: &Cli) -> Result<(String, String)> {
+    match (
+        std::env::var("THINE_RELAYER_ACCOUNT"),
+        std::env::var("THINE_RELAYER_KEY"),
+    ) {
+        (Ok(account), Ok(key)) => Ok((account, key)),
+        _ => {
+            let keyed = load_keyed(&cli.state_dir, &format!("relayer-{}.json", cli.chain_id))?;
+            Ok((keyed.account_id, keyed.secret_key))
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let user: AccountId = cli
-        .account
-        .parse()
-        .with_context(|| format!("{} is not a NEAR account id", cli.account))?;
-
-    let relayer = load_keyed(&cli.state_dir, &format!("relayer-{}.json", cli.chain_id))?;
-    let relayer_client = client(&cli.rpc, &cli.chain_id, &relayer)?;
-
-    let user_keyed = load_keyed(&cli.state_dir, &format!("user-{}.json", cli.chain_id))?;
     anyhow::ensure!(
-        user_keyed.account_id == cli.account,
-        "the key in user-{}.json is for {}, not {}",
-        cli.chain_id,
-        user_keyed.account_id,
-        cli.account
+        cli.account.is_some() != cli.demo,
+        "exactly one of --account (fixed) and --demo (hosted) is required"
     );
-    let user_client = client(&cli.rpc, &cli.chain_id, &user_keyed)?;
+
+    let (relayer_account, relayer_key) = relayer_credentials(&cli)?;
+    let relayer_id: AccountId = relayer_account
+        .parse()
+        .with_context(|| format!("{relayer_account} is not a NEAR account id"))?;
+    let relayer = client(&cli.rpc, &cli.chain_id, &relayer_account, &relayer_key)?;
 
     let chain = Chain::with_client(
         Near::custom(cli.rpc.clone(), cli.chain_id.clone()).build(),
         Box::leak(cli.chain_id.clone().into_boxed_str()),
     );
 
-    let migration = Migration::new(
-        chain.clone(),
-        user.clone(),
-        CryptoHash::from(artifacts::code_hash(Variant::NoSign)?),
-        artifacts::code_hash(Variant::WebauthnP256)?,
-    );
-
-    let ledger_path = ProofLedger::path_for(&cli.state_dir, user.as_str());
-    let ledger = ProofLedger::load_or_new(&ledger_path, user.as_str());
-
     let state = Arc::new(AppState {
         chain,
-        relayer: relayer_client,
-        user: user.clone(),
-        user_client,
-        migration,
-        ledger: Mutex::new(ledger),
-        ledger_path,
-        pending: Mutex::new(HashMap::new()),
+        rpc: cli.rpc.clone(),
+        chain_id: cli.chain_id.clone(),
+        relayer,
+        relayer_id: relayer_id.clone(),
+        no_sign_hash: CryptoHash::from(artifacts::code_hash(Variant::NoSign)?),
+        p256_hash: artifacts::code_hash(Variant::WebauthnP256)?,
+        state_dir: cli.state_dir.clone(),
+        demo: cli.demo,
+        session_cap: cli.session_cap,
+        sessions_created: AtomicUsize::new(0),
+        sessions: StdMutex::new(HashMap::new()),
     });
 
+    if let Some(account) = &cli.account {
+        let user: AccountId = account
+            .parse()
+            .with_context(|| format!("{account} is not a NEAR account id"))?;
+        let keyed = load_keyed(&cli.state_dir, &format!("user-{}.json", cli.chain_id))?;
+        anyhow::ensure!(
+            keyed.account_id == *account,
+            "the key in user-{}.json is for {}, not {account}",
+            cli.chain_id,
+            keyed.account_id,
+        );
+        let user_client = client(
+            &cli.rpc,
+            &cli.chain_id,
+            &keyed.account_id,
+            &keyed.secret_key,
+        )?;
+
+        let mut session = SessionState::new(&state, user.clone(), user_client);
+        session.ledger = ProofLedger::load_or_new(
+            ProofLedger::path_for(&cli.state_dir, user.as_str()),
+            user.as_str(),
+        );
+        state.insert_session(AppState::LOCAL_TOKEN, session);
+    }
+
+    let listen = match std::env::var("PORT") {
+        Ok(port) => format!("0.0.0.0:{port}")
+            .parse()
+            .context("PORT is not a port number")?,
+        Err(_) => cli.listen,
+    };
+
     println!("Thine");
-    println!("  account  {user}");
+    match &cli.account {
+        Some(account) => println!("  account  {account} (fixed)"),
+        None => println!(
+            "  demo     up to {} throwaway accounts under {relayer_id}",
+            cli.session_cap
+        ),
+    }
     println!("  network  {} via {}", cli.chain_id, cli.rpc);
-    println!("  relayer  {}", relayer.account_id);
-    println!("  http://{}", cli.listen);
+    println!("  relayer  {relayer_id}");
+    println!("  http://{listen}");
     println!();
-    println!("Open this on http://localhost:{}", cli.listen.port());
+    println!("Open this on http://localhost:{}", listen.port());
     println!();
     println!("Not on the IP address. A passkey needs a secure context, which plain http gives");
     println!("only on loopback, but it also needs a relying party id, and an IP address cannot");
     println!("be one: Chrome rejects 127.0.0.1 with \"This is an invalid domain.\" `localhost`");
     println!("satisfies both. Anywhere else needs https.");
 
-    let listener = tokio::net::TcpListener::bind(cli.listen)
+    let listener = tokio::net::TcpListener::bind(listen)
         .await
-        .with_context(|| format!("could not bind {}", cli.listen))?;
+        .with_context(|| format!("could not bind {listen}"))?;
     axum::serve(listener, router(state))
         .await
         .context("serving")?;
