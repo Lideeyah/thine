@@ -173,6 +173,14 @@ async fn the_endpoints_drive_the_whole_migration() {
         "the page must register passkeys"
     );
     assert!(html.contains("alg: -7"), "the page must ask for ES256 only");
+    assert!(
+        html.contains("can never add a key, deploy a contract, stake natively"),
+        "the standing lines live in the page"
+    );
+    assert!(
+        html.contains("!== 'passkey_controlled'"),
+        "and render on the post-migration view only"
+    );
 
     // --- the view, before anything ---
     let (status, view) = get(&app, "/api/account").await;

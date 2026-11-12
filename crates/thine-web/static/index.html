@@ -35,6 +35,14 @@
 <section id="authority">
   <h2>Who can open this account</h2>
   <ul id="holders"></ul>
+  <div id="standing" hidden>
+    <!-- Standing properties of a migrated account, not the pre-step warning
+         repeated: someone who opens this weeks later and wonders why adding a
+         key fails should find the answer here rather than from a rejected
+         transaction. Final state only; no tint, no icon. -->
+    <p>This account can never add a key, deploy a contract, stake natively, create a subaccount, or delete itself.</p>
+    <p>Delegated staking through a staking pool still works.</p>
+  </div>
   <p id="survives"></p>
   <p id="orphaned" class="note"></p>
 </section>
@@ -205,6 +213,11 @@ function render(r) {
     steps.append(li);
   }
 
+  // The standing lines are permanent properties of a migrated account, so
+  // they render on the post-migration view only.
+  document.getElementById('standing').hidden =
+    r.authority.stage.stage !== 'passkey_controlled';
+
   // The permanence lines belong to the irreversible step, so they show while
   // it is still ahead and leave once it is done.
   const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');
@@ -303,6 +316,11 @@ async function sign(publicKey, credentialId, purpose) {
 
 /// Prove a passkey can drive the account, through the two-hop route.
 async function provePasskey() {
+  // The standing lines are permanent properties of a migrated account, so
+  // they render on the post-migration view only.
+  document.getElementById('standing').hidden =
+    r.authority.stage.stage !== 'passkey_controlled';
+
   // The permanence lines belong to the irreversible step, so they show while
   // it is still ahead and leave once it is done.
   const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');

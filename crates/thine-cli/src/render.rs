@@ -43,6 +43,17 @@ pub fn authority(view: &AuthorityView, network: &str) -> String {
         }
     }
 
+    // Standing properties of a migrated account, under the holder list and on
+    // the post-migration view only: the answer to "why does adding a key
+    // fail", found here rather than from a rejected transaction.
+    if matches!(view.stage, Stage::PasskeyControlled { .. }) {
+        out.push_str(
+            "\n  This account can never add a key, deploy a contract, stake natively, create a \
+             subaccount, or delete itself.\n",
+        );
+        out.push_str("  Delegated staking through a staking pool still works.\n");
+    }
+
     // The question the last step turns on.
     let proven = view.independent_proven_count();
     out.push_str("\nIf every key were deleted now\n");
@@ -229,6 +240,54 @@ mod tests {
         let out = authority(&view, "testnet");
         assert!(out.contains("stays openable"), "{out}");
         assert!(out.contains("key deletion is permitted"), "{out}");
+    }
+
+    #[test]
+    fn the_standing_lines_render_on_the_post_migration_view_only() {
+        let migrated = AuthorityView {
+            account_id: "lydia.testnet".to_string(),
+            stage: Stage::PasskeyControlled { proven: 2 },
+            holders: vec![
+                passkey(
+                    "0saaa",
+                    HolderStatus::Proven {
+                        tx_hash: "tx1".to_string(),
+                    },
+                ),
+                passkey(
+                    "0sbbb",
+                    HolderStatus::Proven {
+                        tx_hash: "tx2".to_string(),
+                    },
+                ),
+            ],
+            orphaned: None,
+        };
+        let out = authority(&migrated, "testnet");
+        assert!(out.contains("can never add a key"), "{out}");
+        assert!(out.contains("staking pool still works"), "{out}");
+
+        // And on no earlier state.
+        for stage in [
+            Stage::SeedControlled,
+            Stage::WalletDeployed,
+            Stage::PasskeysAdded {
+                added: 2,
+                proven: 2,
+            },
+        ] {
+            let earlier = AuthorityView {
+                account_id: "lydia.testnet".to_string(),
+                stage,
+                holders: vec![],
+                orphaned: None,
+            };
+            let out = authority(&earlier, "testnet");
+            assert!(
+                !out.contains("can never add a key"),
+                "must not render before migration completes: {out}"
+            );
+        }
     }
 
     #[test]
