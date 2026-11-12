@@ -30,6 +30,12 @@ struct Cli {
     #[arg(long, global = true, default_value = ".thine")]
     state_dir: std::path::PathBuf,
 
+    /// RPC endpoint for reads. Defaults to the network's archival endpoint,
+    /// because the view verifies proof and removal transactions by hash and a
+    /// non-archival node forgets them after a few days.
+    #[arg(long, global = true)]
+    rpc: Option<String>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -159,7 +165,13 @@ async fn main() -> Result<()> {
             let account_id: AccountId = account_id
                 .parse()
                 .with_context(|| format!("{account_id} is not a NEAR account id"))?;
-            let chain = cli.network.chain();
+            let chain = match &cli.rpc {
+                Some(rpc) => Chain::with_client(
+                    near_kit::Near::custom(rpc.clone(), cli.network.as_str()).build(),
+                    cli.network.as_str(),
+                ),
+                None => cli.network.chain(),
+            };
             let ledger = ProofLedger::load_or_new(
                 ProofLedger::path_for(&cli.state_dir, account_id.as_str()),
                 account_id.as_str(),

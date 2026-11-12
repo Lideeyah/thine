@@ -23,8 +23,10 @@ struct Cli {
     #[arg(long)]
     account: String,
 
-    /// NEAR RPC url. Point this at a sandbox for local work.
-    #[arg(long, default_value = "https://rpc.testnet.near.org")]
+    /// NEAR RPC url. Point this at a sandbox for local work. The default is
+    /// the archival endpoint so removed rows render from a clean clone: a
+    /// non-archival node forgets the removal transactions after a few days.
+    #[arg(long, default_value = thine_core::chain::TESTNET_ARCHIVAL_RPC)]
     rpc: String,
 
     /// Chain id, which the wallet contract checks against the signed message.

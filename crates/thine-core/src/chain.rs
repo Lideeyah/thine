@@ -41,6 +41,16 @@ pub enum WalletProbe {
     Unreachable { reason: String },
 }
 
+/// NEAR's official archival RPC endpoints, which the read path uses by
+/// default. Archival rather than the regular public RPC because the view
+/// verifies proof and removal transactions by their hash, and a non-archival
+/// node forgets a transaction after a few days: on one, a reader would see
+/// the post-migration view with no removed rows and never learn the evidence
+/// exists. Confirmed directly: `rpc.testnet.near.org` answers `UNKNOWN_BLOCK`
+/// for months-old data that `archival-rpc.testnet.near.org` serves.
+pub const TESTNET_ARCHIVAL_RPC: &str = "https://archival-rpc.testnet.near.org";
+pub const MAINNET_ARCHIVAL_RPC: &str = "https://archival-rpc.mainnet.near.org";
+
 /// A read-only view of a NEAR network.
 #[derive(Clone)]
 pub struct Chain {
@@ -51,14 +61,14 @@ pub struct Chain {
 impl Chain {
     pub fn testnet() -> Self {
         Self {
-            near: Near::testnet().build(),
+            near: Near::custom(TESTNET_ARCHIVAL_RPC, "testnet").build(),
             network: "testnet",
         }
     }
 
     pub fn mainnet() -> Self {
         Self {
-            near: Near::mainnet().build(),
+            near: Near::custom(MAINNET_ARCHIVAL_RPC, "mainnet").build(),
             network: "mainnet",
         }
     }
