@@ -448,7 +448,7 @@ impl Chain {
                         public_key: None,
                     }
                 };
-                Ok(named.then(|| Holder { kind, status }))
+                Ok(named.then_some(Holder { kind, status }))
             }
         }
     }
