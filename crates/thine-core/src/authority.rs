@@ -41,6 +41,23 @@ pub enum HolderKind {
     /// controls.
     FullAccessKey { public_key: String },
 
+    /// A NEAR function call access key on the account. Limited authority: it
+    /// calls named methods on one contract and nothing else. It cannot delete
+    /// keys, change the account's code, or open the account in any general
+    /// sense, but it is authority on the account and the view would be lying
+    /// by omission without it.
+    FunctionCallKey {
+        public_key: String,
+        /// The one contract this key may call.
+        receiver_id: String,
+        /// Methods it may call there. Empty means every method.
+        method_names: Vec<String>,
+        /// Remaining spending allowance in yoctoNEAR, as a decimal string
+        /// because the value does not fit a JavaScript number. `None` is
+        /// unlimited.
+        allowance_yocto: Option<String>,
+    },
+
     /// The account listed as its own extension. This is what `w_init` installs,
     /// and it means "whatever holds a full access key on this account still has
     /// authority". Removing it is what makes the migration final.
@@ -65,6 +82,8 @@ impl HolderKind {
             // An extension executes arbitrary requests on the account's behalf,
             // key deletion included.
             Self::SelfExtension | Self::PasskeyExtension { .. } => true,
+            // Named methods on one contract, nothing else.
+            Self::FunctionCallKey { .. } => false,
         }
     }
 
@@ -73,6 +92,14 @@ impl HolderKind {
             Self::FullAccessKey { public_key } => {
                 format!("full access key {}", abbreviate(public_key))
             }
+            Self::FunctionCallKey {
+                public_key,
+                receiver_id,
+                ..
+            } => format!(
+                "function call key {} for {receiver_id}",
+                abbreviate(public_key)
+            ),
             Self::SelfExtension => "the account itself, via its full access keys".to_string(),
             Self::PasskeyExtension { account_id, .. } => format!("passkey {account_id}"),
         }
@@ -432,6 +459,32 @@ mod tests {
             ],
         };
         assert_eq!(o.staked_yocto(), 6_350_000_000_000_000_000_000);
+    }
+
+    #[test]
+    fn a_function_call_key_is_listed_but_carries_no_full_authority() {
+        let fc = Holder {
+            kind: HolderKind::FunctionCallKey {
+                public_key: "ed25519:Hs8WVWVKGVGcFLpFRRCfPhhVNrQ6j8pTzrPEa9Fq5gMz".to_string(),
+                receiver_id: "some-dapp.testnet".to_string(),
+                method_names: vec!["set_greeting".to_string()],
+                allowance_yocto: Some("250000000000000000000000".to_string()),
+            },
+            status: HolderStatus::Present,
+        };
+        assert!(!fc.kind.has_full_authority());
+        assert!(
+            fc.kind.label().contains("for some-dapp.testnet"),
+            "{}",
+            fc.kind.label()
+        );
+
+        // It is not a passkey, it does not block deletion, and it does not
+        // count towards anything: it is simply shown.
+        let v = view(vec![proven("0saaa"), proven("0sbbb"), fc]);
+        assert_eq!(v.passkeys().count(), 2);
+        assert_eq!(v.independent_proven_count(), 2);
+        assert!(v.guard_key_deletion().is_ok());
     }
 
     #[test]

@@ -194,7 +194,7 @@ impl Chain {
     ///
     /// This is the check that must pass *before* an extension is added. It
     /// proves the account exists and is a wallet. It does not prove anyone
-    /// still holds the passkey — only a `w_execute_signed` does that.
+    /// still holds the passkey; only a `w_execute_signed` does that.
     pub async fn probe_wallet(&self, account_id: &AccountId) -> WalletProbe {
         match self
             .near
@@ -226,6 +226,11 @@ impl Chain {
     }
 
     /// Full access keys currently on the account.
+    ///
+    /// Includes gas keys with full access: a gas key pays its own gas but can
+    /// do everything an ordinary full access key can, so a view of who can
+    /// open the account that skipped it would be wrong, and step 5 would
+    /// leave it holding the account after claiming the keys were gone.
     pub async fn full_access_keys(&self, account_id: &AccountId) -> Result<Vec<String>> {
         let list = self
             .near
@@ -236,9 +241,63 @@ impl Chain {
         Ok(list
             .keys
             .into_iter()
-            .filter(|k| matches!(k.access_key.permission, AccessKeyPermissionView::FullAccess))
+            .filter(|k| {
+                matches!(
+                    k.access_key.permission,
+                    AccessKeyPermissionView::FullAccess
+                        | AccessKeyPermissionView::GasKeyFullAccess { .. }
+                )
+            })
             .map(|k| k.public_key.to_string())
             .collect())
+    }
+
+    /// Every access key on the account, as holders for the authority view:
+    /// full access keys with full authority, function call keys with their
+    /// contract, methods and remaining allowance. Gas keys map to whichever of
+    /// the two their permission grants.
+    pub async fn key_holders(&self, account_id: &AccountId) -> Result<(Vec<Holder>, Vec<String>)> {
+        let list = self
+            .near
+            .access_keys(account_id.clone())
+            .await
+            .with_context(|| format!("view_access_key_list {account_id}"))?;
+
+        let mut holders = Vec::new();
+        let mut full_keys = Vec::new();
+
+        for key in list.keys {
+            let public_key = key.public_key.to_string();
+            let kind = match key.access_key.permission {
+                AccessKeyPermissionView::FullAccess
+                | AccessKeyPermissionView::GasKeyFullAccess { .. } => {
+                    full_keys.push(public_key.clone());
+                    HolderKind::FullAccessKey { public_key }
+                }
+                AccessKeyPermissionView::FunctionCall {
+                    allowance,
+                    receiver_id,
+                    method_names,
+                }
+                | AccessKeyPermissionView::GasKeyFunctionCall {
+                    allowance,
+                    receiver_id,
+                    method_names,
+                    ..
+                } => HolderKind::FunctionCallKey {
+                    public_key,
+                    receiver_id: receiver_id.to_string(),
+                    method_names,
+                    allowance_yocto: allowance.map(|a| a.as_yoctonear().to_string()),
+                },
+            };
+            holders.push(Holder {
+                kind,
+                status: HolderStatus::Present,
+            });
+        }
+
+        Ok((holders, full_keys))
     }
 
     /// Fetch the WASM a global contract account serves.
@@ -333,17 +392,7 @@ impl Chain {
         }
 
         let snapshot = self.state_snapshot(account_id).await?;
-        let full_keys = self.full_access_keys(account_id).await?;
-
-        let mut holders: Vec<Holder> = full_keys
-            .iter()
-            .map(|public_key| Holder {
-                kind: HolderKind::FullAccessKey {
-                    public_key: public_key.clone(),
-                },
-                status: HolderStatus::Present,
-            })
-            .collect();
+        let (mut holders, full_keys) = self.key_holders(account_id).await?;
 
         // Is this already a wallet? If w_extensions answers, it is.
         let extensions = self.wallet_extensions(account_id).await.ok();

@@ -18,8 +18,8 @@
 //!   matching on prose that is free to be reworded.
 //!
 //! The interface should not have to recompute anything to render this. Derived
-//! answers — whether the account survives key deletion, how many passkeys are
-//! required, what a step costs — are fields, not exercises.
+//! answers (whether the account survives key deletion, how many passkeys are
+//! required, what a step costs) are fields, not exercises.
 
 use serde::Serialize;
 
@@ -419,6 +419,45 @@ mod tests {
         assert!(v["account"]["balance"]["near"].is_number());
         assert!(v["orphaned"]["staked"]["yocto"].is_string());
         assert!(v["costs"][0]["burnt"]["yocto"].is_string());
+    }
+
+    #[test]
+    fn a_function_call_key_serialises_with_its_contract_and_a_string_allowance() {
+        let mut a = authority();
+        a.holders.push(Holder {
+            kind: HolderKind::FunctionCallKey {
+                public_key: "ed25519:stub".to_string(),
+                receiver_id: "some-dapp.testnet".to_string(),
+                method_names: vec!["set_greeting".to_string()],
+                allowance_yocto: Some("250000000000000000000000".to_string()),
+            },
+            status: HolderStatus::Present,
+        });
+        let r = AccountReport::assemble(
+            "testnet",
+            ReadAt {
+                block_height: 1,
+                block_hash: "h".to_string(),
+            },
+            &facts(),
+            a,
+        );
+        let v = serde_json::to_value(&r).unwrap();
+        let fc = v["authority"]["holders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["kind"]["kind"] == "function_call_key")
+            .expect("the function call key must be in the view");
+        assert_eq!(fc["kind"]["receiver_id"], "some-dapp.testnet");
+        assert_eq!(fc["kind"]["method_names"][0], "set_greeting");
+        assert!(
+            fc["kind"]["allowance_yocto"].is_string(),
+            "the allowance does not fit a JavaScript number, so it is a string"
+        );
+        // It changes none of the answers.
+        assert_eq!(r.summary.passkeys_added, 2);
+        assert!(r.summary.has_full_access_key);
     }
 
     #[test]
