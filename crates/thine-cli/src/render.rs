@@ -35,6 +35,7 @@ pub fn authority(view: &AuthorityView, network: &str) -> String {
                 "reachable, but has never signed; cannot be relied on".to_string(),
             ),
             HolderStatus::Unreachable { reason } => ("NO", reason.clone()),
+            HolderStatus::Removed { tx_hash } => ("gone", format!("removed, tx {tx_hash}")),
         };
         out.push_str(&format!("  [{mark:>8}]  {}\n", holder.kind.label()));
         if !note.is_empty() {

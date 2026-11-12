@@ -293,13 +293,18 @@ async fn the_whole_migration_and_every_refusal() {
     v.guard_key_deletion().expect("the gate should now open");
 
     println!("\n--- step 5: irreversible ---");
-    let outcomes = m
+    let (outcomes, removals) = m
         .step5_finalise(&user_client, &ledger)
         .await
         .expect("step 5");
     for o in &outcomes {
         println!("  {}: {:.4} TGas", o.step, o.tgas());
     }
+    assert_eq!(removals.len(), 2, "the self-extension and one key");
+    for removal in removals {
+        ledger.record_removal(removal);
+    }
+    ledger.save(&ledger_path).unwrap();
 
     // ===============================================================
     // What is true afterwards.
@@ -317,6 +322,47 @@ async fn the_whole_migration_and_every_refusal() {
         after.unreachable().count() == 0,
         "nothing unreachable should be left behind"
     );
+
+    // The removed holders render from chain evidence: the view fetched each
+    // removal transaction and found the removal inside it.
+    let removed: Vec<&thine_core::Holder> = after
+        .holders
+        .iter()
+        .filter(|h| h.status.is_removed())
+        .collect();
+    assert_eq!(
+        removed.len(),
+        2,
+        "the removed key and the removed self-extension"
+    );
+    assert!(
+        removed
+            .iter()
+            .any(|h| matches!(h.kind, thine_core::HolderKind::SelfExtension)),
+        "the dropped self-extension is shown"
+    );
+    assert!(
+        removed
+            .iter()
+            .any(|h| matches!(h.kind, thine_core::HolderKind::FullAccessKey { .. })),
+        "the deleted key is shown"
+    );
+    assert!(
+        after
+            .holders
+            .iter()
+            .position(|h| h.status.is_removed())
+            .unwrap()
+            > after
+                .holders
+                .iter()
+                .rposition(|h| !h.status.is_removed())
+                .unwrap(),
+        "removed holders sort last"
+    );
+    // And they change no answer: the removed key does not read as a key.
+    assert!(!after.has_full_access_key());
+    assert_eq!(after.independent_proven_count(), 2);
 
     // The account id never changed, and the account still works: the passkey
     // can still drive it with no keys left anywhere.

@@ -284,7 +284,17 @@ pub struct FinalOut {
 /// The irreversible step. Refuses from `thine-core`, not from here.
 pub async fn step5(State(s): State<Arc<AppState>>) -> ApiResult<FinalOut> {
     let ledger = s.ledger.lock().expect("poisoned").clone();
-    let outs = s.migration.step5_finalise(&s.user_client, &ledger).await?;
+    let (outs, removals) = s.migration.step5_finalise(&s.user_client, &ledger).await?;
+
+    // Keep the pointers to what was removed. The view re-verifies each against
+    // the chain before rendering it, so these are lookup keys, not assertions.
+    {
+        let mut ledger = s.ledger.lock().expect("poisoned");
+        for removal in removals {
+            ledger.record_removal(removal);
+        }
+        ledger.save(&s.ledger_path)?;
+    }
 
     Ok(Json(FinalOut {
         steps: outs

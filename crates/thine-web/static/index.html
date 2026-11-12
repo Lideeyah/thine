@@ -44,6 +44,16 @@
   <ol id="steps"></ol>
 </section>
 
+<section id="permanence" hidden>
+  <h2>What becomes permanently true</h2>
+  <ul>
+    <li>After this, the account can never add another key.</li>
+    <li>It can never deploy a contract, stake natively, create a subaccount, or delete itself.</li>
+    <li>Delegated staking through a staking pool still works.</li>
+    <li>The seed phrase will open nothing.</li>
+  </ul>
+</section>
+
 <section id="actions">
   <h2>Do something</h2>
   <p>
@@ -140,7 +150,20 @@ function render(r) {
     if (h.status.status === 'proven') note = '. Has signed';
     if (h.status.status === 'live') note = '. Reachable, but has never signed; cannot be relied on';
     if (h.status.status === 'unreachable') note = `. UNREACHABLE: ${h.status.reason}`;
-    li.textContent = label + note;
+    if (h.status.status === 'removed') {
+      // Struck through and still present, with the transaction that removed
+      // it, so a reader checks the removal against the chain rather than
+      // trusting the row. The row exists only because the view fetched that
+      // transaction and found the removal inside it.
+      const gone = document.createElement('s');
+      gone.textContent = label;
+      li.append(gone, ` Removed, tx `);
+      const hash = document.createElement('code');
+      hash.textContent = h.status.tx_hash;
+      li.append(hash);
+    } else {
+      li.textContent = label + note;
+    }
     holders.append(li);
   }
 
@@ -181,6 +204,12 @@ function render(r) {
     }
     steps.append(li);
   }
+
+  // The permanence lines belong to the irreversible step, so they show while
+  // it is still ahead and leave once it is done.
+  const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');
+  document.getElementById('permanence').hidden =
+    !deleteStep || deleteStep.state === 'done' || deleteStep.state === 'pending';
 
   const known = store.all();
   document.getElementById('passkey-note').textContent = known.length
@@ -274,6 +303,12 @@ async function sign(publicKey, credentialId, purpose) {
 
 /// Prove a passkey can drive the account, through the two-hop route.
 async function provePasskey() {
+  // The permanence lines belong to the irreversible step, so they show while
+  // it is still ahead and leave once it is done.
+  const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');
+  document.getElementById('permanence').hidden =
+    !deleteStep || deleteStep.state === 'done' || deleteStep.state === 'pending';
+
   const known = store.all();
   if (known.length === 0) throw new Error('No passkey in this browser yet. Add one first.');
 

@@ -228,12 +228,15 @@ async fn the_migration_driven_entirely_through_the_browser_path() {
 
     // --- step 5 ---
     println!("\n--- step 5: irreversible ---");
-    for o in m
+    let (outcomes, removals) = m
         .step5_finalise(&user_client, &ledger)
         .await
-        .expect("step 5")
-    {
+        .expect("step 5");
+    for o in &outcomes {
         println!("  {}: {:.4} TGas", o.step, o.tgas());
+    }
+    for removal in removals {
+        ledger.record_removal(removal);
     }
 
     assert!(

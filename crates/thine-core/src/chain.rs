@@ -15,7 +15,7 @@ use near_kit::{
 use crate::{
     authority::{AuthorityView, Holder, HolderKind, HolderStatus, Stage},
     precondition::{StateRecord, StateSnapshot},
-    proof::{ProofLedger, ProofRecord},
+    proof::{ProofLedger, ProofRecord, RemovalKind, RemovalRecord},
 };
 
 /// The facts about an account that do not depend on it being a wallet.
@@ -373,6 +373,86 @@ impl Chain {
         }))
     }
 
+    /// Verify a removal record against the chain and return the removed
+    /// holder it attests, or `None` when the chain does not corroborate it.
+    ///
+    /// Everything rendered comes from the fetched transaction. A `DeleteKey`
+    /// counts only if the transaction succeeded, was sent to the user's
+    /// account, and carries a `DeleteKey` action naming exactly the recorded
+    /// public key. A `RemoveExtension` counts only if the transaction
+    /// succeeded against the user's account and its logs carry the contract's
+    /// own `extension_removed` event naming exactly the recorded account.
+    pub async fn verify_removal(
+        &self,
+        record: &RemovalRecord,
+        user: &AccountId,
+    ) -> Result<Option<Holder>> {
+        let Ok(tx_hash) = record.tx_hash.parse::<CryptoHash>() else {
+            return Ok(None);
+        };
+        let Ok(signer) = record.signer_id.parse::<AccountId>() else {
+            return Ok(None);
+        };
+
+        let outcome = match self
+            .near
+            .tx_status(&tx_hash, signer)
+            .wait_until::<Final>()
+            .await
+        {
+            Ok(o) => o,
+            // A removal the RPC no longer holds is not rendered; it is not an
+            // error in the tool.
+            Err(_) => return Ok(None),
+        };
+
+        if !outcome.is_success() || outcome.transaction.receiver_id != *user {
+            return Ok(None);
+        }
+
+        let status = HolderStatus::Removed {
+            tx_hash: record.tx_hash.clone(),
+        };
+
+        match record.kind {
+            RemovalKind::DeleteKey => {
+                let named = outcome.transaction.actions.iter().any(|a| {
+                    matches!(
+                        a,
+                        ActionView::DeleteKey { public_key } if public_key.to_string() == record.subject
+                    )
+                });
+                Ok(named.then(|| Holder {
+                    kind: HolderKind::FullAccessKey {
+                        public_key: record.subject.clone(),
+                    },
+                    status,
+                }))
+            }
+            RemovalKind::RemoveExtension => {
+                let named = outcome.logs().any(|log| {
+                    let Some(json) = log.strip_prefix("EVENT_JSON:") else {
+                        return false;
+                    };
+                    let Ok(event) = serde_json::from_str::<serde_json::Value>(json) else {
+                        return false;
+                    };
+                    event["event"] == "extension_removed"
+                        && event["data"]["account_id"] == record.subject.as_str()
+                });
+                let kind = if record.subject == user.as_str() {
+                    HolderKind::SelfExtension
+                } else {
+                    HolderKind::PasskeyExtension {
+                        account_id: record.subject.clone(),
+                        public_key: None,
+                    }
+                };
+                Ok(named.then(|| Holder { kind, status }))
+            }
+        }
+    }
+
     /// Build the authority view: one picture of who can open this account.
     ///
     /// Every passkey's status is established by reading the chain, not by
@@ -469,11 +549,21 @@ impl Chain {
             }
         };
 
+        // Holders the migration removed, rendered only where the chain
+        // corroborates the removal. The record is the lookup key; the
+        // transaction is the content.
+        for record in &ledger.removals {
+            if let Some(holder) = self.verify_removal(record, account_id).await? {
+                holders.push(holder);
+            }
+        }
+
         // The screen shows how much power each holder has, so power is the
         // order: full access keys, then the self-extension, then passkey
-        // extensions, then function call keys. The sort is stable, so holders
-        // of equal rank keep the chain's own order.
-        holders.sort_by_key(|h| h.kind.authority_rank());
+        // extensions, then function call keys, and what has been removed
+        // last. The sort is stable, so holders of equal rank keep the chain's
+        // own order.
+        holders.sort_by_key(|h| (h.status.is_removed(), h.kind.authority_rank()));
 
         Ok(AuthorityView {
             account_id: account_id.to_string(),

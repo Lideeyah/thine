@@ -306,6 +306,39 @@ async fn the_endpoints_drive_the_whole_migration() {
     assert_eq!(view["summary"]["has_full_access_key"], false);
     println!("after: {}", view["authority"]["stage"]["stage"]);
 
+    // The removed holders are in the view, each carrying the hash of the
+    // transaction the server verified before rendering it, and they sort last.
+    let holders = view["authority"]["holders"].as_array().unwrap();
+    let removed: Vec<&Value> = holders
+        .iter()
+        .filter(|h| h["status"]["status"] == "removed")
+        .collect();
+    assert_eq!(
+        removed.len(),
+        2,
+        "the removed key and self-extension: {view}"
+    );
+    for h in &removed {
+        assert!(
+            h["status"]["tx_hash"].as_str().unwrap().len() > 30,
+            "a removed row carries the transaction that removed it: {h}"
+        );
+    }
+    assert_eq!(
+        holders
+            .iter()
+            .rev()
+            .take(2)
+            .filter(|h| h["status"]["status"] == "removed")
+            .count(),
+        2,
+        "removed holders render last"
+    );
+    assert_eq!(
+        view["summary"]["passkeys_proven"], 2,
+        "removed rows change no answer"
+    );
+
     // --- and a passkey still drives it with no keys left ---
     let public_key = authenticators[0].public_key_b64();
     let (status, begun) = post(

@@ -23,7 +23,7 @@ use near_kit::{AccountId, CryptoHash, Near, rpc::FinalExecutionOutcome, transact
 use crate::{
     authority::Refusal,
     chain::{Chain, WalletProbe},
-    proof::{ProofLedger, ProofRecord},
+    proof::{ProofLedger, ProofRecord, RemovalKind, RemovalRecord},
     webauthn::BrowserPasskey,
 };
 
@@ -267,11 +267,14 @@ impl Migration {
     /// [`crate::authority::MIN_PROVEN_PASSKEYS`] independent passkeys have each
     /// completed step 4, verified against the chain rather than taken from the
     /// ledger, and refuses if any listed extension is unreachable.
+    /// Also returns a [`RemovalRecord`] per holder removed, pointing at the
+    /// transaction that removed it, so the view can later render the removal
+    /// from chain evidence rather than from memory.
     pub async fn step5_finalise(
         &self,
         user_client: &Near,
         ledger: &ProofLedger,
-    ) -> Result<Vec<StepOutcome>> {
+    ) -> Result<(Vec<StepOutcome>, Vec<RemovalRecord>)> {
         // Hard refusal. Re-read the chain; do not trust a cached view.
         let view = self.chain.authority_view(&self.user, ledger).await?;
         view.guard_key_deletion()?;
@@ -285,6 +288,7 @@ impl Migration {
         }
 
         let mut outcomes = Vec::new();
+        let mut removals = Vec::new();
 
         // Remove the account as its own extension. After this, full access keys
         // still exist but no longer carry wallet authority.
@@ -304,6 +308,13 @@ impl Migration {
             bail!("step 5 (RemoveExtension) failed: {:?}", outcome.status);
         }
         settle(user_client, &outcome).await?;
+        removals.push(RemovalRecord {
+            kind: RemovalKind::RemoveExtension,
+            subject: self.user.to_string(),
+            tx_hash: outcome.transaction_hash().to_string(),
+            signer_id: outcome.transaction.signer_id.to_string(),
+            recorded_at: crate::now_rfc3339(),
+        });
         outcomes.push(summarise("5a: drop the self-extension", &outcome));
 
         // Then the keys themselves.
@@ -321,10 +332,17 @@ impl Migration {
                 bail!("step 5 (DeleteKey {key}) failed: {:?}", outcome.status);
             }
             settle(user_client, &outcome).await?;
+            removals.push(RemovalRecord {
+                kind: RemovalKind::DeleteKey,
+                subject: key.clone(),
+                tx_hash: outcome.transaction_hash().to_string(),
+                signer_id: outcome.transaction.signer_id.to_string(),
+                recorded_at: crate::now_rfc3339(),
+            });
             outcomes.push(summarise("5b: delete a full access key", &outcome));
         }
 
-        Ok(outcomes)
+        Ok((outcomes, removals))
     }
 
     /// Build a wallet handle for a passkey held in a browser, from its public

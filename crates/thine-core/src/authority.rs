@@ -147,11 +147,20 @@ pub enum HolderStatus {
     /// Listed as an extension but not reachable. This is the lockout case the
     /// contract does not catch.
     Unreachable { reason: String },
+
+    /// No longer on the account. Rendered only from chain evidence: `tx_hash`
+    /// is the transaction the view fetched and found the removal in, never a
+    /// local assertion that something used to be here.
+    Removed { tx_hash: String },
 }
 
 impl HolderStatus {
     pub fn is_proven(&self) -> bool {
         matches!(self, Self::Proven { .. })
+    }
+
+    pub fn is_removed(&self) -> bool {
+        matches!(self, Self::Removed { .. })
     }
 }
 
@@ -201,10 +210,12 @@ pub struct AuthorityView {
 }
 
 impl AuthorityView {
+    /// Passkey holders that are still on the account. A removed one is
+    /// history, not authority, and counts towards nothing.
     pub fn passkeys(&self) -> impl Iterator<Item = &Holder> {
-        self.holders
-            .iter()
-            .filter(|h| matches!(h.kind, HolderKind::PasskeyExtension { .. }))
+        self.holders.iter().filter(|h| {
+            matches!(h.kind, HolderKind::PasskeyExtension { .. }) && !h.status.is_removed()
+        })
     }
 
     /// Passkeys that have proven a human can still sign with them.
@@ -233,7 +244,7 @@ impl AuthorityView {
     pub fn has_full_access_key(&self) -> bool {
         self.holders
             .iter()
-            .any(|h| matches!(h.kind, HolderKind::FullAccessKey { .. }))
+            .any(|h| matches!(h.kind, HolderKind::FullAccessKey { .. }) && !h.status.is_removed())
     }
 
     pub fn unreachable(&self) -> impl Iterator<Item = &Holder> {

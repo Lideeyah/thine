@@ -28,12 +28,47 @@ pub struct ProofRecord {
     pub recorded_at: String,
 }
 
+/// What kind of removal a record points at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemovalKind {
+    /// A `DeleteKey` action on the account.
+    DeleteKey,
+    /// A `RemoveExtension` op executed through `w_execute_extension`.
+    RemoveExtension,
+}
+
+/// A claim that the migration removed a holder, as a pointer to the
+/// transaction that did it.
+///
+/// Like a [`ProofRecord`], this is a lookup key and not evidence. The view
+/// renders a removed holder only after fetching the transaction and finding
+/// the removal inside it: the `DeleteKey` action naming this exact public key,
+/// or the contract's `extension_removed` event naming this exact account. A
+/// record the chain does not corroborate renders nothing, so the view never
+/// asserts that a holder once existed on its own memory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovalRecord {
+    pub kind: RemovalKind,
+    /// The public key deleted, or the extension account id removed.
+    pub subject: String,
+    /// Transaction hash of the removal, base58.
+    pub tx_hash: String,
+    /// The account that signed it, needed to look the transaction up.
+    pub signer_id: String,
+    /// RFC 3339, display only. Never trusted.
+    pub recorded_at: String,
+}
+
 /// Thine's local record of proofs, one file per user account.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProofLedger {
     /// The account being migrated.
     pub account_id: String,
     pub proofs: Vec<ProofRecord>,
+    /// Pointers to the transactions that removed holders in step 5.
+    #[serde(default)]
+    pub removals: Vec<RemovalRecord>,
 }
 
 impl ProofLedger {
@@ -41,6 +76,7 @@ impl ProofLedger {
         Self {
             account_id: account_id.into(),
             proofs: Vec::new(),
+            removals: Vec::new(),
         }
     }
 
@@ -77,6 +113,13 @@ impl ProofLedger {
         self.proofs
             .retain(|p| p.extension_account_id != record.extension_account_id);
         self.proofs.push(record);
+    }
+
+    /// Record a removal, replacing any earlier record of the same subject.
+    pub fn record_removal(&mut self, record: RemovalRecord) {
+        self.removals
+            .retain(|r| !(r.kind == record.kind && r.subject == record.subject));
+        self.removals.push(record);
     }
 
     pub fn for_account(&self, extension_account_id: &str) -> Option<&ProofRecord> {
