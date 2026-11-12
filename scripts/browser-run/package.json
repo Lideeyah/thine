@@ -1,0 +1,8 @@
+{
+  "name": "thine-browser-run",
+  "private": true,
+  "type": "module",
+  "description": "Drives a full migration through the real interface with Chrome's virtual authenticator, so the whole flow runs with nobody at the machine. A virtual-authenticator run is not a real-device run and is never described as one.",
+  "scripts": { "run": "node run.mjs" },
+  "dependencies": { "puppeteer-core": "^24.0.0" }
+}
