@@ -418,17 +418,29 @@ impl Chain {
             .parse()
             .with_context(|| format!("proof relayer {} is not an account id", record.relayed_by))?;
 
-        let outcome = match self
-            .near
-            .tx_status(&tx_hash, relayer)
-            .wait_until::<Final>()
-            .await
-        {
-            Ok(o) => o,
-            // A proof we cannot look up does not count, but it is not an error
-            // in the tool: the transaction may have been garbage collected.
-            Err(_) => return Ok(false),
-        };
+        // A proof we cannot look up does not count, but it is not an error in
+        // the tool: the transaction may have been garbage collected. A proof
+        // sent moments ago can also be missing from one stale replica, so the
+        // lookup gets a short patience before the record is set aside.
+        let mut outcome = None;
+        for attempt in 0..3u64 {
+            match retry_429!(
+                self.near
+                    .tx_status(&tx_hash, relayer.clone())
+                    .wait_until::<Final>()
+                    .await
+            ) {
+                Ok(o) => {
+                    outcome = Some(o);
+                    break;
+                }
+                Err(_) if attempt < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                }
+                Err(_) => return Ok(false),
+            }
+        }
+        let outcome = outcome.expect("loop either sets or returns");
 
         if !outcome.is_success() {
             return Ok(false);
@@ -492,17 +504,28 @@ impl Chain {
             return Ok(None);
         };
 
-        let outcome = match self
-            .near
-            .tx_status(&tx_hash, signer)
-            .wait_until::<Final>()
-            .await
-        {
-            Ok(o) => o,
-            // A removal the RPC no longer holds is not rendered; it is not an
-            // error in the tool.
-            Err(_) => return Ok(None),
-        };
+        // A removal the RPC no longer holds is not rendered; it is not an
+        // error in the tool. One it holds but a stale replica has not seen yet
+        // gets the same short patience as a proof.
+        let mut outcome = None;
+        for attempt in 0..3u64 {
+            match retry_429!(
+                self.near
+                    .tx_status(&tx_hash, signer.clone())
+                    .wait_until::<Final>()
+                    .await
+            ) {
+                Ok(o) => {
+                    outcome = Some(o);
+                    break;
+                }
+                Err(_) if attempt < 2 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                }
+                Err(_) => return Ok(None),
+            }
+        }
+        let outcome = outcome.expect("loop either sets or returns");
 
         if !outcome.is_success() || outcome.transaction.receiver_id != *user {
             return Ok(None);

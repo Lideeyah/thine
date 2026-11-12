@@ -184,6 +184,21 @@ try {
     () => window.__thine.report?.authority?.stage?.stage === 'passkey_controlled',
     { timeout: 120000 });
 
+  // The removal rows render only once the chain corroborates each removal,
+  // and a replica can lag a just-sent transaction by a few seconds; a person
+  // would refresh, so the script does.
+  for (let i = 0; i < 12; i++) {
+    const removed = await page.evaluate(() =>
+      window.__thine.report.authority.holders.filter(h => h.status.status === 'removed').length);
+    if (removed >= 2) break;
+    step(`removed rows at ${removed}; refreshing`);
+    await new Promise(r => setTimeout(r, 5000));
+    await page.reload({ waitUntil: 'networkidle2' });
+    await page.waitForFunction(
+      () => window.__thine?.report?.authority?.stage?.stage === 'passkey_controlled',
+      { timeout: 120000 });
+  }
+
   const result = await page.evaluate(() => {
     const r = window.__thine.report;
     const removed = r.authority.holders

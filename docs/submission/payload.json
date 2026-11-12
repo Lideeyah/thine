@@ -1,0 +1,9 @@
+{
+  "requestId": "a946bc07-500b-415c-a90f-eeb02ff2024a",
+  "projectName": "Thine",
+  "size": "1",
+  "tracks": ["open"],
+  "nearAddress": "",
+  "idea": "Thine moves an existing NEAR account from seed phrase control to passkey control. The account id stays the same and no assets move; when the migration completes the seed phrase key has been removed, the account holds no full access key, and authority runs only through the registered passkeys. A passkey signs with P-256, which is not a NEAR access key type, so authority has to live in contract code: the account becomes NEAR's wallet-no-sign contract, referenced by code hash as a NEP-591 global contract that Thine published on testnet, and each passkey controls a zero-balance NEP-616 0s account running wallet-webauthn-p256, its signatures checked on chain with the p256_verify host function. The product is the authority view, a straight answer to who can open this account: every access key permission variant enumerated, holders ordered by power, and removed holders rendered only from fetched transactions, never from local memory. The tool refuses to delete keys until two independent passkeys have each proven the full routed path on chain. Every number is a committed, re-runnable measurement: a passkey hop costs 8.60 TGas through the account, and publishing the two contracts burned 67.882131 NEAR, the figure the benchmark predicted to the yoctoNEAR. A hosted testnet demo migrates a fresh throwaway account end to end from the browser, with the visitor's own device as the passkey, no wallet and no funds needed.",
+  "consent": true
+}

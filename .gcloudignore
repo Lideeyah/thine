@@ -1,0 +1,5 @@
+.git/
+target/
+.thine/
+scripts/browser-run/node_modules/
+contracts/thine-probe/target/
