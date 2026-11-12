@@ -4,374 +4,162 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thine</title>
+<link rel="stylesheet" href="/tokens.css">
 <!--
-  Deliberately unstyled.
-
-  This page is structure and behaviour: the authority view, the five steps, and
-  the WebAuthn calls that make a passkey real. Every visual decision - layout,
-  type, colour, how the irreversible step is set apart - is the designer's and
-  is not made here. The markup is semantic and the state is in the data
-  attributes, so it can be restyled without touching the logic, or replaced
-  entirely against the same endpoints.
-
-  The only CSS below is what it takes to read the thing while building it.
+  Structure and copy follow thine-screen-prompts-2026-11-12.md. Every visual
+  value lives in tokens.css, which is a placeholder for the design system.
+  Behaviour that predates these screens is unchanged: holders order by
+  authority, removal rows come from fetched transactions and never from the
+  ledger, the permanence lines gate to the irreversible step, the standing
+  lines gate to the migrated state.
 -->
-<style>
-  body { font-family: ui-monospace, monospace; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-  section { margin: 2rem 0; }
-  [data-state="done"] { opacity: 0.55; }
-  [data-irreversible="true"] { border-left: 3px solid currentColor; padding-left: 0.75rem; }
-  li { margin: 0.5rem 0; }
-  button { font: inherit; padding: 0.3rem 0.6rem; }
-  pre { white-space: pre-wrap; word-break: break-word; }
-  .note { font-size: 0.85em; }
-</style>
 </head>
 <body>
-
 <h1>Thine</h1>
-<p id="subtitle">Loading…</p>
 
-<section id="authority">
-  <h2>Who can open this account</h2>
-  <ul id="holders"></ul>
-  <div id="standing" hidden>
-    <!-- Standing properties of a migrated account, not the pre-step warning
-         repeated: someone who opens this weeks later and wonders why adding a
-         key fails should find the answer here rather than from a rejected
-         transaction. Final state only; no tint, no icon. -->
+<!-- ================= Screen 1. Open an account ================= -->
+<section data-screen="open" class="active">
+  <h2>See who can open an account</h2>
+  <p>Enter any NEAR account id. Nothing is signed and nothing is connected.</p>
+  <label class="field-label" for="open-input">Account id</label>
+  <input type="text" id="open-input" autocomplete="off" spellcheck="false">
+  <div class="actions" id="open-actions">
+    <button class="primary" id="open-go">Open account</button>
+  </div>
+  <div class="rule-indeterminate" id="open-rule" hidden></div>
+  <p class="notice" id="open-notice"></p>
+
+  <div id="open-demo" hidden>
+    <h2>Or migrate a demo account</h2>
+    <p>This server creates a throwaway testnet account for you to migrate, so you need no wallet
+       and no funds. The passkeys you add are your own device's.</p>
+    <div class="actions">
+      <button id="open-session">Create a demo account to migrate</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Screens 2 and 7. The authority view ============ -->
+<section data-screen="authority">
+  <div class="display" id="auth-id"></div>
+  <p id="auth-control-line"></p>
+
+  <div class="label">Who can open this account</div>
+  <div id="auth-rows"></div>
+
+  <div id="auth-standing" hidden>
     <p>This account can never add a key, deploy a contract, stake natively, create a subaccount, or delete itself.</p>
     <p>Delegated staking through a staking pool still works.</p>
   </div>
-  <p id="survives"></p>
-  <p id="orphaned" class="note"></p>
+
+  <p class="graphite small" id="auth-orphaned"></p>
+
+  <div class="actions" id="auth-actions">
+    <button class="primary" id="auth-change">Change the lock</button>
+    <button id="auth-register-another" hidden>Register another passkey</button>
+    <button id="auth-back">Open another account</button>
+  </div>
+  <p id="auth-stay-line">The account id, the balance, the staking and the history all stay. Only the way it opens changes.</p>
+  <div id="auth-copy" class="copy-field" hidden>
+    <code id="auth-copy-value"></code>
+    <button data-copy="#auth-copy-value">Copy</button>
+  </div>
+  <p class="notice" id="auth-notice"></p>
 </section>
 
-<section id="plan">
-  <h2>The migration</h2>
-  <ol id="steps"></ol>
+<!-- ================ Screen 3. Create the passkey ================ -->
+<section data-screen="create">
+  <h2>Create a passkey</h2>
+  <p>This uses the same unlock you already use on this device. There is nothing to write down.</p>
+
+  <label class="field-label" for="create-name">A name for this device</label>
+  <input type="text" id="create-name" autocomplete="off" placeholder="this laptop">
+
+  <div class="label">The account this passkey will control</div>
+  <div class="copy-field">
+    <code id="create-address">&nbsp;</code>
+    <button data-copy="#create-address">Copy</button>
+  </div>
+  <p>The address is worked out from the passkey before anything is sent, so you can check it here first.</p>
+  <p>Creating it costs nothing.</p>
+  <p class="w500">The passkey is this account's identity and cannot be swapped later.</p>
+
+  <div class="actions" id="create-actions">
+    <button class="primary" id="create-go">Create passkey</button>
+    <button id="create-continue" hidden>Continue</button>
+    <button id="create-back">Go back</button>
+  </div>
+  <div class="rule-indeterminate" id="create-rule" hidden></div>
+  <p class="notice" id="create-notice"></p>
 </section>
 
-<section id="permanence" hidden>
-  <h2>What becomes permanently true</h2>
-  <ul>
-    <li>After this, the account can never add another key.</li>
-    <li>It can never deploy a contract, stake natively, create a subaccount, or delete itself.</li>
-    <li>Delegated staking through a staking pool still works.</li>
-    <li>The seed phrase will open nothing.</li>
-  </ul>
+<!-- ============== Screen 4. Register the passkeys ============== -->
+<section data-screen="register">
+  <h2>Register your passkeys</h2>
+  <p>Each passkey you register can open the account. Two is the minimum, so that losing one device does not lose the account.</p>
+
+  <div id="register-rows"></div>
+
+  <div class="actions">
+    <button id="register-another">Register another passkey</button>
+    <button class="primary" id="register-continue">Continue</button>
+  </div>
+  <div class="rule-indeterminate" id="register-rule" hidden></div>
+  <p class="notice" id="register-notice"></p>
 </section>
 
-<section id="actions">
-  <h2>Do something</h2>
-  <p>
-    <button id="btn-step1">1. Become a wallet</button>
-    <button id="btn-addpasskey">2. Add a passkey (uses your device)</button>
-    <button id="btn-prove">3. Prove a passkey (uses your device)</button>
-    <button id="btn-step5">4. Delete every key</button>
-  </p>
-  <p class="note" id="passkey-note"></p>
+<!-- ================ Screen 5. Prove each passkey ================ -->
+<section data-screen="prove">
+  <h2>Prove each passkey works</h2>
+  <p>Each passkey signs a real call to the account. Nothing changes and nothing is removed.</p>
+
+  <div id="prove-rows"></div>
+
+  <div class="actions">
+    <button class="primary" id="prove-continue">Continue</button>
+  </div>
+  <div class="rule-indeterminate" id="prove-rule" hidden></div>
+  <p class="notice" id="prove-notice"></p>
+
+  <p>Open this screen again on each device you want to use, and prove that device's passkey there.</p>
 </section>
 
-<section id="log">
-  <h2>What happened</h2>
-  <pre id="logtext"></pre>
+<!-- ============== Screen 6. The point of no return ============== -->
+<section data-screen="final">
+  <div class="label">First, remove the account's own hold</div>
+  <p>The account currently signs for itself as well as through your passkeys. This removes that, and it only succeeds because your passkeys are registered.</p>
+  <div class="actions">
+    <button id="final-self-hold">Remove the self hold</button>
+  </div>
+  <div id="final-part1-rows"></div>
+
+  <div id="final-part2" hidden>
+    <h2>Remove the last full access key</h2>
+
+    <div class="label">What will be left</div>
+    <div id="final-remains"></div>
+    <p class="notice" id="final-remains-notice"></p>
+
+    <div id="final-permanence">
+      <p>After this, the account can never add another key.</p>
+      <p>It can never deploy a contract, stake natively, create a subaccount, or delete itself.</p>
+      <p>Delegated staking through a staking pool still works.</p>
+      <p>The seed phrase will open nothing.</p>
+      <p class="w500">After this there is no key left to add another.</p>
+    </div>
+
+    <label class="field-label" for="final-confirm">Type the account id to continue</label>
+    <input type="text" id="final-confirm" autocomplete="off" spellcheck="false">
+
+    <div class="actions" id="final-actions">
+      <button class="primary" id="final-remove">Remove last key</button>
+      <button id="final-back">Go back</button>
+    </div>
+  </div>
+  <div class="rule-indeterminate" id="final-rule" hidden></div>
+  <p class="notice" id="final-notice"></p>
 </section>
 
-<script>
-// ---------------------------------------------------------------------------
-// Encoding helpers. WebAuthn speaks ArrayBuffer; the API speaks base64url.
-// ---------------------------------------------------------------------------
-const b64u = {
-  encode(buf) {
-    const bytes = new Uint8Array(buf);
-    let s = '';
-    for (const b of bytes) s += String.fromCharCode(b);
-    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  },
-  decode(str) {
-    const padded = str.replace(/-/g, '+').replace(/_/g, '/');
-    const raw = atob(padded + '='.repeat((4 - padded.length % 4) % 4));
-    return Uint8Array.from(raw, c => c.charCodeAt(0));
-  },
-};
-
-function log(...parts) {
-  const el = document.getElementById('logtext');
-  el.textContent = parts.join(' ') + '\n' + el.textContent;
-}
-
-async function api(path, body) {
-  const res = await fetch(path, body === undefined
-    ? {}
-    : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `${path} failed with ${res.status}`);
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// Passkeys the browser knows about, so credentials.get can ask for the right
-// one. The credential id lives here; the private key never leaves the device.
-// ---------------------------------------------------------------------------
-const store = {
-  all() {
-    try { return JSON.parse(localStorage.getItem('thine.passkeys') || '[]'); }
-    catch { return []; }
-  },
-  add(entry) {
-    const all = this.all().filter(e => e.publicKey !== entry.publicKey);
-    all.push(entry);
-    localStorage.setItem('thine.passkeys', JSON.stringify(all));
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Rendering. Reads only the frozen view contract.
-// ---------------------------------------------------------------------------
-let report = null;
-
-function render(r) {
-  report = r;
-  document.getElementById('subtitle').textContent =
-    `${r.account.account_id} on ${r.network}. Balance ${r.account.balance.near.toFixed(4)} NEAR, ` +
-    `read at block ${r.read_at.block_height}`;
-
-  const holders = document.getElementById('holders');
-  holders.textContent = '';
-  if (r.authority.holders.length === 0) {
-    const li = document.createElement('li');
-    li.textContent = 'Nobody. This account has no keys and no reachable delegates.';
-    holders.append(li);
-  }
-  for (const h of r.authority.holders) {
-    const li = document.createElement('li');
-    li.dataset.status = h.status.status;
-    let label = h.kind.kind === 'full_access_key'
-      ? `full access key ${h.kind.public_key}`
-      : h.kind.kind === 'function_call_key'
-        ? `function call key ${h.kind.public_key} for ${h.kind.receiver_id}`
-        : h.kind.kind === 'self_extension'
-          ? 'the account itself, via its full access keys'
-          : `passkey ${h.kind.account_id}`;
-    let note = '';
-    if (h.status.status === 'proven') note = '. Has signed';
-    if (h.status.status === 'live') note = '. Reachable, but has never signed; cannot be relied on';
-    if (h.status.status === 'unreachable') note = `. UNREACHABLE: ${h.status.reason}`;
-    if (h.status.status === 'removed') {
-      // Struck through and still present, with the transaction that removed
-      // it, so a reader checks the removal against the chain rather than
-      // trusting the row. The row exists only because the view fetched that
-      // transaction and found the removal inside it.
-      const gone = document.createElement('s');
-      gone.textContent = label;
-      li.append(gone, ` Removed, tx `);
-      const hash = document.createElement('code');
-      hash.textContent = h.status.tx_hash;
-      li.append(hash);
-    } else {
-      li.textContent = label + note;
-    }
-    holders.append(li);
-  }
-
-  const s = r.summary;
-  document.getElementById('survives').textContent = s.survives_key_deletion
-    ? `If every key were deleted now, the account stays openable: ${s.passkeys_proven} independent passkeys have each signed.`
-    : `If every key were deleted now, the account would be lost. ${s.passkeys_proven} of ${s.passkeys_required} required passkeys have proven they can sign.`;
-
-  const orphaned = document.getElementById('orphaned');
-  orphaned.textContent = r.orphaned
-    ? `This account also pays for ${r.orphaned.bytes} bytes of storage nothing can read any more (${r.orphaned.staked.near.toFixed(6)} NEAR, staked permanently): ${r.orphaned.keys.join(', ')}.`
-    : '';
-
-  const steps = document.getElementById('steps');
-  steps.textContent = '';
-  for (const step of r.plan.steps) {
-    const li = document.createElement('li');
-    li.dataset.state = step.state;
-    li.dataset.irreversible = String(step.irreversible);
-    const cost = r.costs.find(c => c.step_id === step.id);
-    const bits = [step.title];
-    if (step.progress) bits.push(`(${step.progress[0]} of ${step.progress[1]})`);
-    if (step.state === 'current') bits.push('(now)');
-    if (step.state === 'done') bits.push('(done)');
-    if (step.irreversible) bits.push('(cannot be undone)');
-    const head = document.createElement('div');
-    head.textContent = bits.join(' ');
-    li.append(head);
-    const detail = document.createElement('div');
-    detail.className = 'note';
-    detail.textContent = step.effect + (cost ? ` Costs about ${cost.tgas.toFixed(2)} TGas.` : '');
-    li.append(detail);
-    if (step.blocked_by) {
-      const blocked = document.createElement('div');
-      blocked.className = 'note';
-      blocked.textContent = `Blocked: ${step.blocked_by}`;
-      li.append(blocked);
-    }
-    steps.append(li);
-  }
-
-  // The standing lines are permanent properties of a migrated account, so
-  // they render on the post-migration view only.
-  document.getElementById('standing').hidden =
-    r.authority.stage.stage !== 'passkey_controlled';
-
-  // The permanence lines belong to the irreversible step, so they show while
-  // it is still ahead and leave once it is done.
-  const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');
-  document.getElementById('permanence').hidden =
-    !deleteStep || deleteStep.state === 'done' || deleteStep.state === 'pending';
-
-  const known = store.all();
-  document.getElementById('passkey-note').textContent = known.length
-    ? `This browser knows ${known.length} passkey(s) for this account.`
-    : 'This browser knows no passkeys for this account yet.';
-}
-
-async function refresh() {
-  render(await api('/api/account'));
-}
-
-// ---------------------------------------------------------------------------
-// The passkey steps. These are the ones that touch the user's own device.
-// ---------------------------------------------------------------------------
-
-/// Register a new passkey and put its 0s account on chain.
-async function addPasskey() {
-  if (!window.PublicKeyCredential) {
-    throw new Error('This browser has no WebAuthn. A passkey needs it.');
-  }
-  // An IP address is a secure context but is not a registrable domain, so it
-  // cannot be a WebAuthn relying party id. Chrome rejects it with the
-  // unhelpful "This is an invalid domain." Say what to do instead.
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(location.hostname) || location.hostname.includes(':')) {
-    throw new Error(
-      `Passkeys will not work on ${location.hostname}: an IP address cannot be a WebAuthn ` +
-      `relying party. Open this page on http://localhost:${location.port} instead.`);
-  }
-
-  const created = await navigator.credentials.create({
-    publicKey: {
-      // Registration is not verified on chain: Thine takes only the public
-      // key from it, so this challenge is not a security boundary. The
-      // signature that matters is the one in the next step.
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      rp: { name: 'Thine' },
-      user: {
-        id: crypto.getRandomValues(new Uint8Array(16)),
-        name: report.account.account_id,
-        displayName: report.account.account_id,
-      },
-      // ES256 only. The wallet contract verifies P-256 and nothing else, so
-      // offering any other algorithm would produce a key it cannot use.
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-      authenticatorSelection: { userVerification: 'preferred', residentKey: 'preferred' },
-      timeout: 120000,
-    },
-  });
-
-  const spki = created.response.getPublicKey();
-  if (!spki) throw new Error('This authenticator did not report a public key.');
-  const publicKey = b64u.encode(spki);
-  const credentialId = b64u.encode(created.rawId);
-
-  const derived = await api('/api/passkey/derive', { public_key: publicKey });
-  log('passkey derives to', derived.account_id);
-  store.add({ publicKey, credentialId, accountId: derived.account_id });
-
-  // Create the 0s account. Signed directly by the passkey, because it is not
-  // authorised yet and a routed request would be refused.
-  const created2 = await sign(publicKey, credentialId, 'create');
-  log('step 2:', created2.account_id, 'created,', created2.tgas.toFixed(4), 'TGas');
-
-  // Authorise it. Refuses unless the account answers w_public_key.
-  const added = await api('/api/step3', { account_id: derived.account_id });
-  log('step 3: authorised,', added.tgas.toFixed(4), 'TGas');
-}
-
-/// Ask the device to sign, and submit the assertion.
-async function sign(publicKey, credentialId, purpose) {
-  const begun = await api('/api/passkey/begin', { public_key: publicKey, purpose });
-
-  const got = await navigator.credentials.get({
-    publicKey: {
-      challenge: b64u.decode(begun.challenge),
-      allowCredentials: [{ type: 'public-key', id: b64u.decode(credentialId) }],
-      userVerification: 'preferred',
-      timeout: 120000,
-    },
-  });
-
-  return api('/api/passkey/finish', {
-    token: begun.token,
-    authenticator_data: b64u.encode(got.response.authenticatorData),
-    // The exact bytes, decoded as text: it is hashed byte-for-byte on chain,
-    // so re-serialising the JSON would invalidate the signature.
-    client_data_json: new TextDecoder().decode(got.response.clientDataJSON),
-    signature: b64u.encode(got.response.signature),
-  });
-}
-
-/// Prove a passkey can drive the account, through the two-hop route.
-async function provePasskey() {
-  // The standing lines are permanent properties of a migrated account, so
-  // they render on the post-migration view only.
-  document.getElementById('standing').hidden =
-    r.authority.stage.stage !== 'passkey_controlled';
-
-  // The permanence lines belong to the irreversible step, so they show while
-  // it is still ahead and leave once it is done.
-  const deleteStep = r.plan.steps.find(st => st.id === 'delete-keys');
-  document.getElementById('permanence').hidden =
-    !deleteStep || deleteStep.state === 'done' || deleteStep.state === 'pending';
-
-  const known = store.all();
-  if (known.length === 0) throw new Error('No passkey in this browser yet. Add one first.');
-
-  // Prove the first one that has not proven itself yet.
-  const unproven = known.find(k =>
-    !report.authority.holders.some(h =>
-      h.kind.account_id === k.accountId && h.status.status === 'proven'));
-  const target = unproven || known[0];
-
-  const out = await sign(target.publicKey, target.credentialId, 'prove');
-  log('step 4:', target.accountId, 'proved,', out.tgas.toFixed(4), 'TGas, tx', out.tx_hash);
-}
-
-// ---------------------------------------------------------------------------
-// Wiring
-// ---------------------------------------------------------------------------
-function on(id, fn) {
-  document.getElementById(id).addEventListener('click', async () => {
-    const buttons = document.querySelectorAll('button');
-    buttons.forEach(b => b.disabled = true);
-    try {
-      await fn();
-      await refresh();
-    } catch (e) {
-      log('refused or failed:', e.message);
-    } finally {
-      buttons.forEach(b => b.disabled = false);
-    }
-  });
-}
-
-on('btn-step1', async () => {
-  const out = await api('/api/step1', {});
-  log('step 1:', out.tgas.toFixed(4), 'TGas, tx', out.tx_hash);
-});
-on('btn-addpasskey', addPasskey);
-on('btn-prove', provePasskey);
-on('btn-step5', async () => {
-  const out = await api('/api/step5', {});
-  for (const s of out.steps) log('step 5:', s.step, s.tgas.toFixed(4), 'TGas');
-});
-
-refresh().catch(e => {
-  document.getElementById('subtitle').textContent = `Could not read the account: ${e.message}`;
-});
-</script>
+<script src="/app.js"></script>
 </body>
 </html>
