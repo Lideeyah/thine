@@ -469,6 +469,12 @@ impl Chain {
             }
         };
 
+        // The screen shows how much power each holder has, so power is the
+        // order: full access keys, then the self-extension, then passkey
+        // extensions, then function call keys. The sort is stable, so holders
+        // of equal rank keep the chain's own order.
+        holders.sort_by_key(|h| h.kind.authority_rank());
+
         Ok(AuthorityView {
             account_id: account_id.to_string(),
             stage,

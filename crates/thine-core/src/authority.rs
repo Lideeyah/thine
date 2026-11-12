@@ -87,6 +87,22 @@ impl HolderKind {
         }
     }
 
+    /// Sort rank for the view: holders with the most power first.
+    ///
+    /// The screen exists to show how much power each holder has, so power is
+    /// the order. Full access keys can do anything, the self-extension is the
+    /// account's own full authority restated, passkey extensions act for the
+    /// account through the contract, and function call keys reach one
+    /// contract's named methods and nothing else.
+    pub fn authority_rank(&self) -> u8 {
+        match self {
+            Self::FullAccessKey { .. } => 0,
+            Self::SelfExtension => 1,
+            Self::PasskeyExtension { .. } => 2,
+            Self::FunctionCallKey { .. } => 3,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             Self::FullAccessKey { public_key } => {
@@ -459,6 +475,40 @@ mod tests {
             ],
         };
         assert_eq!(o.staked_yocto(), 6_350_000_000_000_000_000_000);
+    }
+
+    #[test]
+    fn holders_sort_by_power_descending() {
+        let mut holders = [
+            passkey("0saaa", HolderStatus::Live),
+            Holder {
+                kind: HolderKind::FunctionCallKey {
+                    public_key: "ed25519:stub".to_string(),
+                    receiver_id: "dapp.testnet".to_string(),
+                    method_names: vec![],
+                    allowance_yocto: None,
+                },
+                status: HolderStatus::Present,
+            },
+            Holder {
+                kind: HolderKind::SelfExtension,
+                status: HolderStatus::Present,
+            },
+            Holder {
+                kind: HolderKind::FullAccessKey {
+                    public_key: "ed25519:stub".to_string(),
+                },
+                status: HolderStatus::Present,
+            },
+        ];
+        holders.sort_by_key(|h| h.kind.authority_rank());
+        let ranks: Vec<u8> = holders.iter().map(|h| h.kind.authority_rank()).collect();
+        assert_eq!(ranks, [0, 1, 2, 3]);
+        assert!(matches!(holders[0].kind, HolderKind::FullAccessKey { .. }));
+        assert!(matches!(
+            holders[3].kind,
+            HolderKind::FunctionCallKey { .. }
+        ));
     }
 
     #[test]
