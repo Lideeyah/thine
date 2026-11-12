@@ -306,6 +306,12 @@ cargo test -p defuse-wallet-sdk --test thine_publish_cost    -- --nocapture --te
 
 ---
 
+## What the authority view covers
+
+The authority view enumerates every access key permission variant the protocol exposes, including
+both NEP-611 gas key variants, which are live on mainnet: a gas key with full access counts as a
+full access key, and a gas key with function call access as a function call key.
+
 ## Not done
 
 As instructed, I stopped at verification and did not begin building the migration flow. Steps 2, 4 and 5 of the five-step architecture were exercised only as far as checks 1 and 2 required. Step 4 (proving a passkey works via `w_execute_signed` with a promise to `w_execute_extension`) is fully demonstrated by the two-hop benchmark, but step 5 (`RemoveExtension` then `DeleteKey` on every full access key) was deliberately not run anywhere, per the brief.
