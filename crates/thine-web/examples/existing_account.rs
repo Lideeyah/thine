@@ -1,0 +1,173 @@
+//! Build a genuinely pre-existing testnet account, then ask the chain what
+//! its seed phrase is worth after migration.
+//!
+//! The migration's central claim is that it works on accounts that already
+//! exist, with whatever past they carry. The sandbox proves the mechanism over
+//! prior contract state; this tool produces the same situation on live
+//! testnet, so the record can point at transactions anyone can fetch.
+//!
+//!   cargo run -p thine-web --example existing_account -- prepare
+//!
+//! creates an account under the relayer whose one full access key derives
+//! from a printed seed phrase, then gives it a past signed by that key: it
+//! deploys an ordinary near-sdk contract, writes state through it, and moves
+//! tokens. The key lands in .thine/user-testnet.json, which is exactly what
+//! `thine-web --account` expects.
+//!
+//!   cargo run -p thine-web --example existing_account -- try-seed <id> <12 words>
+//!
+//! derives the key from the phrase and submits a one yoctoNEAR self transfer,
+//! printing the chain's verbatim answer. Before migration it is accepted;
+//! after, the chain refuses it, and that refusal is the product.
+
+use anyhow::{Context, Result, bail};
+use near_kit::{AccountId, Gas, Near, NearToken, signer::SecretKey, transaction::Final};
+
+const RPC: &str = thine_core::chain::TESTNET_ARCHIVAL_RPC;
+const CHAIN_ID: &str = "testnet";
+
+/// Enough for the probe contract's storage and every transaction it signs.
+const FUNDING: NearToken = NearToken::from_millinear(2500);
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Keyed {
+    account_id: String,
+    secret_key: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("prepare") => prepare().await,
+        Some("try-seed") if args.len() >= 3 => try_seed(&args[1], &args[2..].join(" ")).await,
+        _ => bail!("usage: existing_account prepare | try-seed <account_id> <seed phrase>"),
+    }
+}
+
+async fn prepare() -> Result<()> {
+    let relayer_keyed: Keyed = serde_json::from_slice(
+        &std::fs::read(".thine/relayer-testnet.json")
+            .context("expected .thine/relayer-testnet.json")?,
+    )?;
+    let relayer_id: AccountId = relayer_keyed.account_id.parse()?;
+    let relayer = Near::custom(RPC.to_string(), CHAIN_ID.to_string())
+        .credentials(relayer_keyed.secret_key.as_str(), relayer_id.clone())
+        .context("relayer credentials")?
+        .build();
+
+    // The one full access key derives from a seed phrase at NEAR's standard
+    // path, the way a wallet's would.
+    let phrase = thine_web::session::generate_seed_phrase()?;
+    let secret = SecretKey::from_seed_phrase(&phrase)
+        .map_err(|e| anyhow::anyhow!("deriving from the seed phrase: {e}"))?;
+
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+    let id: AccountId = format!("v{}.{relayer_id}", secs % 1_000_000_000).parse()?;
+
+    println!("account      {id}");
+    println!("seed phrase  {phrase}");
+
+    let outcome = relayer
+        .transaction(id.clone())
+        .create_account()
+        .transfer(FUNDING)
+        .add_full_access_key(secret.public_key())
+        .wait_until::<Final>()
+        .await
+        .context("creating the account")?;
+    if !outcome.is_success() {
+        bail!("creating {id} failed: {:?}", outcome.status);
+    }
+    println!("created      {}", outcome.transaction_hash());
+
+    let user = Near::custom(RPC.to_string(), CHAIN_ID.to_string())
+        .credentials(secret.to_string(), id.clone())
+        .context("user credentials")?
+        .build();
+
+    // A past, all of it signed by the phrase-derived key: an ordinary
+    // near-sdk contract, state written through it, and tokens moved. This is
+    // the shape of an account that has been used, not one made for a demo.
+    let wasm = std::fs::read("res/thine-probe.wasm").context("res/thine-probe.wasm")?;
+    let outcome = user.deploy(wasm).wait_until::<Final>().await?;
+    if !outcome.is_success() {
+        bail!("deploying the probe failed: {:?}", outcome.status);
+    }
+    println!("deployed     {}", outcome.transaction_hash());
+
+    for round in 0..3u32 {
+        let outcome = user
+            .transaction(id.clone())
+            .call("bump")
+            .gas(Gas::from_tgas(10))
+            .finish()
+            .call("put")
+            .args(serde_json::json!({
+                "key": format!("record-{round}"),
+                "value": "x".repeat(64 * (round as usize + 1)),
+            }))
+            .gas(Gas::from_tgas(10))
+            .finish()
+            .wait_until::<Final>()
+            .await?;
+        if !outcome.is_success() {
+            bail!("state write {round} failed: {:?}", outcome.status);
+        }
+        println!("state write  {}", outcome.transaction_hash());
+    }
+
+    let outcome = user
+        .transaction(relayer_id.clone())
+        .transfer(NearToken::from_millinear(10))
+        .wait_until::<Final>()
+        .await?;
+    if !outcome.is_success() {
+        bail!("transfer failed: {:?}", outcome.status);
+    }
+    println!("transfer     {}", outcome.transaction_hash());
+
+    std::fs::write(
+        ".thine/user-testnet.json",
+        serde_json::to_vec_pretty(&Keyed {
+            account_id: id.to_string(),
+            secret_key: secret.to_string(),
+        })?,
+    )?;
+    println!();
+    println!("key written to .thine/user-testnet.json; migrate with");
+    println!("  thine-web --account {id}");
+    Ok(())
+}
+
+async fn try_seed(account: &str, phrase: &str) -> Result<()> {
+    let id: AccountId = account.parse()?;
+    let secret = SecretKey::from_seed_phrase(phrase)
+        .map_err(|e| anyhow::anyhow!("deriving from the seed phrase: {e}"))?;
+    let user = Near::custom(RPC.to_string(), CHAIN_ID.to_string())
+        .credentials(secret.to_string(), id.clone())
+        .context("credentials")?
+        .build();
+
+    // One yoctoNEAR, from the account to itself: the smallest thing the
+    // chain would accept from a key it still honours.
+    let sent = user
+        .transaction(id.clone())
+        .transfer(NearToken::from_yoctonear(1))
+        .wait_until::<Final>()
+        .await;
+    match sent {
+        Ok(outcome) if outcome.is_success() => {
+            println!(
+                "the chain accepted a transaction signed with the phrase: {}",
+                outcome.transaction_hash()
+            );
+        }
+        Ok(outcome) => println!("the chain answered: {:?}", outcome.status),
+        // The chain's own words, never paraphrased.
+        Err(e) => println!("the chain refused it: {e:#}"),
+    }
+    Ok(())
+}

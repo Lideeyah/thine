@@ -93,25 +93,31 @@ try {
   await page.waitForFunction(() => window.__thine?.meta, { timeout: 30000 });
   const meta = await page.evaluate(() => window.__thine.meta);
   step('server network:', meta.network, 'demo:', meta.demo);
-  if (!meta.demo) fail('server is not in demo mode');
 
-  await page.waitForSelector('#open-session', { visible: true });
-  await page.click('#open-session');
+  // Demo mode opens a throwaway session; fixed mode boots straight onto the
+  // pre-existing account named on the server's command line.
+  if (meta.demo) {
+    await page.waitForSelector('#open-session', { visible: true });
+    await page.click('#open-session');
+  }
   await waitScreen(page, 'authority');
   const account = await page.evaluate(() => window.__thine.own);
-  step('demo account:', account);
+  step(meta.demo ? 'demo account:' : 'fixed account:', account);
 
   await page.waitForFunction(
     () => window.__thine.report?.authority?.stage?.stage === 'seed_controlled',
     { timeout: 60000 });
 
-  // The demo account's key derives from a seed phrase, and before migration
-  // the chain accepts what that phrase signs. Prove it, so the refusal at the
-  // end means something.
-  await page.waitForSelector('#auth-seed-try', { visible: true });
-  await clickText(page, '#auth-seed-try', 'Try the seed phrase');
-  await waitNotice(page, 'auth-seed-result', 'accepted a transaction', 180000);
-  step('seed phrase accepted before migration, as it should be');
+  if (meta.demo) {
+    // The demo account's key derives from a seed phrase, and before migration
+    // the chain accepts what that phrase signs. Prove it, so the refusal at
+    // the end means something. A fixed account's phrase never reaches the
+    // server, so there its beats run outside this script.
+    await page.waitForSelector('#auth-seed-try', { visible: true });
+    await clickText(page, '#auth-seed-try', 'Try the seed phrase');
+    await waitNotice(page, 'auth-seed-result', 'accepted a transaction', 180000);
+    step('seed phrase accepted before migration, as it should be');
+  }
 
   // --- Change the lock: runs step 1, lands on the create screen ---
   await page.click('#auth-change');
@@ -208,11 +214,14 @@ try {
   }
 
   // And now the same phrase against the same chain, after.
-  await clickText(page, '#auth-seed-try', 'Try the seed phrase');
-  await waitNotice(page, 'auth-seed-result', 'refused', 240000);
-  const seedVerdict = await page.evaluate(() =>
-    document.getElementById('auth-seed-result').textContent);
-  step('seed phrase refused after migration');
+  let seedVerdict = null;
+  if (meta.demo) {
+    await clickText(page, '#auth-seed-try', 'Try the seed phrase');
+    await waitNotice(page, 'auth-seed-result', 'refused', 240000);
+    seedVerdict = await page.evaluate(() =>
+      document.getElementById('auth-seed-result').textContent);
+    step('seed phrase refused after migration');
+  }
 
   const result = await page.evaluate(() => {
     const r = window.__thine.report;
