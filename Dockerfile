@@ -1,6 +1,6 @@
 # The hosted judge path: thine-web in demo mode. The relayer key arrives as
 # environment at deploy time and is never part of this image or repository.
-FROM rust:1.100-trixie AS build
+FROM rust:1.97.1 AS build
 WORKDIR /src
 COPY . .
 RUN cargo build --release -p thine-web
