@@ -7,6 +7,9 @@ the authenticator and the chain; this run replaces only the authenticator.
 
 ## If the hosted demo is up
 
+The stable address is `https://lideeyah.github.io/redirect/`, which forwards
+to the live demo.
+
 1. Open the demo URL in Safari or Chrome on any device with a platform
    authenticator (a Mac with Touch ID, an iPhone, an Android phone).
 2. Press **Create a demo account to migrate**. A fresh testnet account

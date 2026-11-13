@@ -14,3 +14,8 @@ The payload beside this file is the draft for the one unrepeatable POST to
   passkey migration tool, and padding reads as padding.
 - Before sending: the repository must be public, the demo post must be live,
   and the hosted demo must be up.
+- The hosted demo's stable URL is `https://lideeyah.github.io/redirect/`. It
+  forwards to the current tunnel and repoints itself whenever the tunnel
+  address changes, so it is the address to put in the submission and the demo
+  post. It stays up as long as the Mac running the launchd agent
+  `com.lideeyah.thine-demo` is powered on.
