@@ -5,6 +5,52 @@ the machine, because it needs a finger on a real authenticator. About five
 minutes. Every virtual-authenticator run so far exercised everything between
 the authenticator and the chain; this run replaces only the authenticator.
 
+## The strongest take: an account that already exists
+
+The demo-mode take below migrates an account created seconds earlier. This
+take migrates one that already has a past, which is the product's actual
+claim. It mixes a terminal with the browser, and that is fine on camera: the
+terminal is where the chain speaks in its own words.
+
+Prepare once, off camera:
+
+```bash
+cargo run -p thine-web --release --example existing_account -- prepare
+```
+
+This prints an account id and a seed phrase, gives the account a history
+signed by that phrase (a deployed contract, state, a transfer), and writes
+the key where the server expects it. Keep the output. Then:
+
+```bash
+cargo run -p thine-web --release --bin thine-web --     --account <the printed account id>     --send-rpc https://rpc.testnet.fastnear.com --listen 127.0.0.1:8081
+```
+
+On camera, in order:
+
+1. Show the account's past: open
+   `https://testnet.nearblocks.io/address/<account id>` in a tab. A deployed
+   contract and a history of transactions, none of them made by Thine.
+2. In the terminal, show the phrase opening the account:
+
+   ```bash
+   cargo run -p thine-web --release --example existing_account --        try-seed <account id> <the twelve words>
+   ```
+
+   The chain accepts a transaction and prints its hash.
+3. Open **http://localhost:8081**. The authority view loads straight onto
+   the account: one full access key, and the prior contract's storage
+   already surfaced as bytes nothing will be able to read.
+4. Migrate exactly as in the demo-mode steps 3 to 8 below: two passkeys
+   created, registered and proven with a finger on the real authenticator,
+   then the self hold, then the typed confirmation and the last key.
+5. Run the same try-seed command again. The chain refuses it: the key the
+   phrase derives no longer exists. This is the whole product in one line.
+6. End on the final authority view: the account opened by the passkeys, the
+   removed key and self hold struck through with their transaction hashes,
+   and the storage line still telling the truth about the past. Paste a
+   removal hash into `https://testnet.nearblocks.io/txns/<hash>`.
+
 ## If the hosted demo is up
 
 The stable address is `https://lideeyah.github.io/redirect/`, which forwards
@@ -47,5 +93,8 @@ cannot be a WebAuthn relying party) and follow the same clicks from step 2.
 
 ## What to capture for the demo video
 
-One take of steps 2 through 9 is the complete story: a real account, a real
-device, and an irreversible change a viewer can verify on an explorer.
+The existing-account take above is the complete story: an account with a
+past, a real device, and an irreversible change a viewer can verify on an
+explorer. The demo-mode take is the fallback if the terminal feels like too
+much; its account is created on camera, so say so rather than implying it
+was old.
