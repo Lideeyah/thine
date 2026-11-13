@@ -32,6 +32,11 @@ pub struct SessionState {
     pub migration: Migration,
     pub ledger: ProofLedger,
     pub pending: HashMap<String, Pending>,
+    /// The 12 words the demo account's full access key derives from, shown in
+    /// the demo so the migration's claim is demonstrable: before, the chain
+    /// accepts what this phrase signs; after, it refuses it. `None` in fixed
+    /// mode. A real migration never displays anyone's phrase.
+    pub seed_phrase: Option<String>,
 }
 
 impl SessionState {
@@ -49,12 +54,24 @@ impl SessionState {
             migration,
             ledger,
             pending: HashMap::new(),
+            seed_phrase: None,
         }
     }
 }
 
+/// Twelve words, from CSPRNG entropy, exactly as a wallet would make them.
+pub fn generate_seed_phrase() -> anyhow::Result<String> {
+    use sha2::{Digest, Sha256};
+    // The CSPRNG this process already trusts, folded to 128 bits of entropy.
+    let seed = SecretKey::generate_ed25519().to_string();
+    let digest = Sha256::digest(seed.as_bytes());
+    let mnemonic = bip39::Mnemonic::from_entropy(&digest[..16])
+        .map_err(|e| anyhow::anyhow!("mnemonic generation: {e}"))?;
+    Ok(mnemonic.to_string())
+}
+
 /// Create and fund a fresh throwaway account under the relayer.
-pub async fn create_demo_account(state: &AppState) -> Result<(AccountId, Near)> {
+pub async fn create_demo_account(state: &AppState) -> Result<(AccountId, Near, String)> {
     let created = state
         .sessions_created
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -66,7 +83,12 @@ pub async fn create_demo_account(state: &AppState) -> Result<(AccountId, Near)> 
         );
     }
 
-    let secret = SecretKey::generate_ed25519();
+    // The account's one full access key derives from a seed phrase at NEAR's
+    // standard path, the way a wallet's would, so the demo can show the exact
+    // words that open the account and later show the chain refusing them.
+    let seed_phrase = generate_seed_phrase()?;
+    let secret = SecretKey::from_seed_phrase(&seed_phrase)
+        .map_err(|e| anyhow::anyhow!("deriving from the seed phrase: {e}"))?;
     let suffix: u32 = rand_suffix();
     let id: AccountId = format!(
         "d{}{suffix:06}.{}",
@@ -97,7 +119,7 @@ pub async fn create_demo_account(state: &AppState) -> Result<(AccountId, Near)> 
         .context("demo account credentials")?
         .build();
 
-    Ok((id, client))
+    Ok((id, client, seed_phrase))
 }
 
 fn rand_suffix() -> u32 {

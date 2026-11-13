@@ -19,12 +19,13 @@ defuse-wallet-webauthn = { git = "https://github.com/near/intents", rev = "32cd1
 # "contracts" provides the #[near_kit::contract] macro the wallet bindings use;
 # "rpc" is the HTTP client. Both are off by default in a default-features = false
 # build, and the wallet SDK does not enable them itself.
-near-kit = { version = "0.20.1", default-features = false, features = ["contracts", "rpc"] }
+near-kit = { version = "0.20.1", default-features = false, features = ["contracts", "mnemonic", "rpc"] }
 near-kit-sandbox = "0.20.1"
 
 anyhow = "1"
 axum = "0.8"
 base64 = "0.22"
+bip39 = "2"
 bs58 = "0.5"
 hex-literal = "1"
 serde = { version = "1", features = ["derive"] }

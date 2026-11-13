@@ -133,6 +133,9 @@ pub async fn inspect(
 pub struct SessionOut {
     pub token: String,
     pub account_id: String,
+    /// Demo accounts only: the words the account's key derives from, shown so
+    /// the demo can prove what migration does to them.
+    pub seed_phrase: Option<String>,
 }
 
 /// Open a demo session: a fresh, funded throwaway account to migrate.
@@ -145,27 +148,90 @@ pub async fn open_session(State(s): State<Arc<AppState>>) -> ApiResult<SessionOu
                 "this server is not in demo mode and has no fixed account either".to_string(),
             )
         })?;
-        let account_id = session.lock().await.user.to_string();
+        let guard = session.lock().await;
         return Ok(Json(SessionOut {
             token: AppState::LOCAL_TOKEN.to_string(),
-            account_id,
+            account_id: guard.user.to_string(),
+            seed_phrase: guard.seed_phrase.clone(),
         }));
     }
 
-    let (user, user_client) = crate::session::create_demo_account(&s).await?;
+    let (user, user_client, seed_phrase) = crate::session::create_demo_account(&s).await?;
     let token: String = URL_SAFE_NO_PAD
         .encode(near_kit::signer::SecretKey::generate_ed25519().to_string())
         .chars()
         .take(32)
         .collect();
 
-    let session = SessionState::new(&s, user.clone(), user_client);
+    let mut session = SessionState::new(&s, user.clone(), user_client);
+    session.seed_phrase = Some(seed_phrase.clone());
     s.insert_session(token.clone(), session);
 
     Ok(Json(SessionOut {
         token,
         account_id: user.to_string(),
+        seed_phrase: Some(seed_phrase),
     }))
+}
+
+#[derive(Serialize)]
+pub struct TrySeedOut {
+    /// Whether the chain accepted a transaction signed with the phrase.
+    pub accepted: bool,
+    /// The chain's own words: a transaction hash when accepted, the exact
+    /// rejection otherwise. Never paraphrased.
+    pub detail: String,
+}
+
+/// Sign a one-yoctoNEAR self-transfer with the key the seed phrase derives,
+/// and report what the chain said. Before migration the chain accepts it;
+/// after, the key does not exist and the chain refuses. This endpoint is the
+/// demo's proof that the phrase is dead, straight from the network rather
+/// than from this server's opinion.
+pub async fn try_seed(State(s): State<Arc<AppState>>, headers: HeaderMap) -> ApiResult<TrySeedOut> {
+    let session = session_of(&s, &headers)?;
+    let (phrase, user) = {
+        let guard = session.lock().await;
+        let Some(phrase) = guard.seed_phrase.clone() else {
+            return Err(ApiError(
+                StatusCode::CONFLICT,
+                "this session has no seed phrase to try; only demo accounts carry one".to_string(),
+            ));
+        };
+        (phrase, guard.user.clone())
+    };
+
+    let key = near_kit::signer::SecretKey::from_seed_phrase(&phrase).map_err(|e| {
+        ApiError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("derivation: {e}"),
+        )
+    })?;
+    let client = near_kit::Near::custom(s.rpc.clone(), s.chain_id.clone())
+        .credentials(key.to_string(), user.clone())
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("client: {e}")))?
+        .build();
+
+    use near_kit::transaction::Final;
+    match client
+        .transaction(user)
+        .transfer(near_kit::NearToken::from_yoctonear(1))
+        .wait_until::<Final>()
+        .await
+    {
+        Ok(outcome) if outcome.is_success() => Ok(Json(TrySeedOut {
+            accepted: true,
+            detail: outcome.transaction_hash().to_string(),
+        })),
+        Ok(outcome) => Ok(Json(TrySeedOut {
+            accepted: false,
+            detail: format!("{:?}", outcome.status),
+        })),
+        Err(e) => Ok(Json(TrySeedOut {
+            accepted: false,
+            detail: format!("{e}"),
+        })),
+    }
 }
 
 // ---------------------------------------------------------------------------

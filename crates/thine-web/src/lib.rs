@@ -124,6 +124,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/meta", get(api::meta))
         .route("/api/inspect/{account_id}", get(api::inspect))
         .route("/api/session", post(api::open_session))
+        .route("/api/try-seed", post(api::try_seed))
         .route("/api/account", get(api::account))
         .route("/api/step1", post(api::step1))
         .route("/api/passkey/derive", post(api::derive))

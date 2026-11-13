@@ -52,6 +52,20 @@
     <p>Delegated staking through a staking pool still works.</p>
   </div>
 
+  <div id="auth-seed" hidden>
+    <div class="label">The seed phrase that opens this account</div>
+    <div class="copy-field">
+      <code id="auth-seed-words"></code>
+      <button data-copy="#auth-seed-words">Copy</button>
+    </div>
+    <p class="graphite small">Shown because this is a demo account. A real migration never displays
+       your phrase.</p>
+    <div class="actions">
+      <button id="auth-seed-try">Try the seed phrase</button>
+    </div>
+    <p class="notice" id="auth-seed-result"></p>
+  </div>
+
   <p class="graphite small" id="auth-orphaned"></p>
 
   <div class="actions" id="auth-actions">

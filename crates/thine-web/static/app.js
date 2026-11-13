@@ -37,20 +37,22 @@ const S = {
   viewing: null,   // the account the authority screen shows
   report: null,
   passkeys: [],    // [{name, credentialId, publicKey, accountId, registered, proven, provenAt}]
+  seedPhrase: null,
   txs: [],         // every transaction hash observed, oldest first
 };
 window.__thine = S;
 
 function saveLocal() {
   try {
-    if (S.token) localStorage.setItem('thine.session', JSON.stringify({ token: S.token, own: S.own }));
+    if (S.token) localStorage.setItem('thine.session',
+      JSON.stringify({ token: S.token, own: S.own, seedPhrase: S.seedPhrase }));
     if (S.own) localStorage.setItem(`thine.passkeys.${S.own}`, JSON.stringify(S.passkeys));
   } catch {}
 }
 function loadLocal() {
   try {
     const sess = JSON.parse(localStorage.getItem('thine.session') || 'null');
-    if (sess) { S.token = sess.token; S.own = sess.own; }
+    if (sess) { S.token = sess.token; S.own = sess.own; S.seedPhrase = sess.seedPhrase || null; }
     if (S.own) S.passkeys = JSON.parse(localStorage.getItem(`thine.passkeys.${S.own}`) || '[]');
   } catch {}
 }
@@ -227,6 +229,11 @@ function renderAuthority() {
       + `(${r.orphaned.staked.near.toFixed(6)} NEAR, staked permanently).`
     : '';
 
+  // The demo's seed phrase, and the button that asks the chain about it.
+  const showSeed = own && !!S.seedPhrase;
+  $('auth-seed').hidden = !showSeed;
+  if (showSeed) $('auth-seed-words').textContent = S.seedPhrase;
+
   $('auth-change').hidden = migrated;
   $('auth-stay-line').hidden = migrated;
   $('auth-register-another').hidden = !(migrated && own);
@@ -284,6 +291,23 @@ $('auth-change').addEventListener('click', async () => {
   }
 });
 
+$('auth-seed-try').addEventListener('click', async () => {
+  $('auth-seed-result').textContent = '';
+  const btn = $('auth-seed-try');
+  btn.disabled = true;
+  try {
+    const out = await api('/api/try-seed', {});
+    // The chain's own words, never paraphrased.
+    $('auth-seed-result').textContent = out.accepted
+      ? `The chain accepted a transaction signed with the phrase. Tx ${out.detail}`
+      : `The chain refused it: ${out.detail}`;
+  } catch (e) {
+    $('auth-seed-result').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 $('auth-register-another').addEventListener('click', () => {
   $('auth-notice').textContent =
     'Registering after migration routes through an existing passkey, which this demo has not wired yet.';
@@ -320,6 +344,7 @@ $('open-session').addEventListener('click', async () => {
     const out = await api('/api/session', {});
     S.token = out.token;
     S.own = out.account_id;
+    S.seedPhrase = out.seed_phrase || null;
     S.passkeys = [];
     saveLocal();
     await openAuthority(S.own);

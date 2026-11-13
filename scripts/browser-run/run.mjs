@@ -105,6 +105,14 @@ try {
     () => window.__thine.report?.authority?.stage?.stage === 'seed_controlled',
     { timeout: 60000 });
 
+  // The demo account's key derives from a seed phrase, and before migration
+  // the chain accepts what that phrase signs. Prove it, so the refusal at the
+  // end means something.
+  await page.waitForSelector('#auth-seed-try', { visible: true });
+  await clickText(page, '#auth-seed-try', 'Try the seed phrase');
+  await waitNotice(page, 'auth-seed-result', 'accepted a transaction', 180000);
+  step('seed phrase accepted before migration, as it should be');
+
   // --- Change the lock: runs step 1, lands on the create screen ---
   await page.click('#auth-change');
   await waitScreen(page, 'create', 180000);
@@ -199,6 +207,13 @@ try {
       { timeout: 120000 });
   }
 
+  // And now the same phrase against the same chain, after.
+  await clickText(page, '#auth-seed-try', 'Try the seed phrase');
+  await waitNotice(page, 'auth-seed-result', 'refused', 240000);
+  const seedVerdict = await page.evaluate(() =>
+    document.getElementById('auth-seed-result').textContent);
+  step('seed phrase refused after migration');
+
   const result = await page.evaluate(() => {
     const r = window.__thine.report;
     const removed = r.authority.holders
@@ -215,6 +230,7 @@ try {
       txs: window.__thine.txs,
     };
   });
+  result.seedVerdict = seedVerdict;
 
   if (result.stage !== 'passkey_controlled') fail(`stage is ${result.stage}`);
   if (result.hasKey) fail('a full access key remains');

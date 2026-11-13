@@ -11,11 +11,16 @@
    nothing else should need to change.
    ========================================================================== */
 :root {
-  /* colour: near-monochrome, one ink, one paper, one secondary */
-  --paper: #ffffff;
-  --ink: #141414;
-  --graphite: #6b6b6b;
-  --rule: #dcdcdc;
+  /* colour: warm paper, near-black ink, one deep accent for the primary
+     action and the in-flight rule. Chosen here because the design system
+     file never arrived and the owner asked for colour; still the quietest
+     palette that is not monochrome, and still one file to overwrite. */
+  --paper: #faf8f3;
+  --ink: #211d15;
+  --graphite: #6e6a5f;
+  --rule: #e2ddd1;
+  --accent: #2f5d50;
+  --accent-ink: #f6f4ee;
 
   /* type: system faces only; mono is for chain data per the prompts */
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -108,22 +113,23 @@ p { margin: var(--s2) 0; }
 /* --- controls --- */
 button {
   font: inherit;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--graphite);
   background: var(--paper);
   color: var(--ink);
   border-radius: var(--radius);
   padding: var(--s2) var(--s4);
   cursor: pointer;
 }
-button.primary { background: var(--ink); color: var(--paper); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 button:disabled { opacity: 0.55; cursor: default; }
 
+input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 input[type="text"] {
   font-family: var(--mono);
   font-size: var(--size-body);
   width: 100%;
   padding: var(--s2) var(--s3);
-  border: 1px solid var(--ink);
+  border: 1px solid var(--graphite);
   border-radius: var(--radius);
   background: var(--paper);
   color: var(--ink);
@@ -159,7 +165,7 @@ input::placeholder { color: var(--graphite); }
   position: absolute;
   top: 0; left: -30%;
   width: 30%; height: 1px;
-  background: var(--ink);
+  background: var(--accent);
   animation: indeterminate 1.2s linear infinite;
 }
 @keyframes indeterminate {
