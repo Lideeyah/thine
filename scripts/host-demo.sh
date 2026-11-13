@@ -12,6 +12,10 @@ cd "$(dirname "$0")/.."
 CLOUDFLARED=/opt/homebrew/opt/cloudflared/bin/cloudflared
 SERVER=./target/release/thine-web
 LOG=.thine/host-demo.log
+# launchd starts agents with a bare PATH, which is how the first repoint
+# silently failed to find gh. Absolute paths, with a lookup fallback.
+GH=/opt/homebrew/bin/gh
+[ -x "$GH" ] || GH=$(command -v gh || true)
 
 ensure_server() {
   if ! curl -s -m 3 http://localhost:8080/api/meta >/dev/null 2>&1; then
@@ -30,12 +34,12 @@ publish_url() {
   local url=$1
   echo "$url" > .thine/tunnel-url.txt
   # Best effort: only if the redirect repo exists and gh is authenticated.
-  command -v gh >/dev/null || return 0
-  gh api repos/Lideeyah/redirect >/dev/null 2>&1 || return 0
+  [ -n "$GH" ] || return 0
+  "$GH" api repos/Lideeyah/redirect >/dev/null 2>&1 || return 0
   local sha content
-  sha=$(gh api repos/Lideeyah/redirect/contents/index.html --jq .sha 2>/dev/null)
-  content=$(printf '<!doctype html><meta charset="utf-8">\n<meta http-equiv="refresh" content="0; url=%s">\n<title>Thine</title>\n<p><a href="%s">Continue</a></p>\n' "$url" "$url" | base64)
-  gh api repos/Lideeyah/redirect/contents/index.html -X PUT \
+  sha=$("$GH" api repos/Lideeyah/redirect/contents/index.html --jq .sha 2>/dev/null)
+  content=$(printf '<!doctype html><meta charset="utf-8">\n<meta http-equiv="refresh" content="0; url=%s">\n<title>Continue</title>\n<p><a href="%s">Continue</a></p>\n' "$url" "$url" | base64)
+  "$GH" api repos/Lideeyah/redirect/contents/index.html -X PUT \
     -f message="point at the current demo" \
     -f content="$content" ${sha:+-f sha="$sha"} >/dev/null 2>&1 \
     && echo "$(date -u +%FT%TZ) redirect -> $url" >> "$LOG"
