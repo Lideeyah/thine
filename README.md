@@ -249,6 +249,25 @@ has it.
 A failed `w_init` rolls back the `UseGlobalContract` in the same receipt, so a refused migration
 leaves the account exactly as it was. That is measured, not assumed.
 
+The same situation has been produced and migrated on live testnet, not only in the sandbox. On
+13 November 2026, `cargo run -p thine-web --example existing_account -- prepare` created
+`v794558571.thine-1a1a75385a8.testnet` and gave it a past signed entirely by its seed-phrase key:
+an ordinary near-sdk contract deployed in `9K7E2dr69Ej2E6Jd7Z8NcU9mTQDdg57BH9QtGhad3PTJ`, state
+written through it in `EL9Ehir36A3RZMyJ2Q7Ch66X52a66tCP4f93uc4Qk5HE`,
+`A5hYqyMYyaSVWUk56urBNqy8qRSMcMf6uMtjgxScxG8Q` and
+`EW3ze6cMeuh6vpAYX5R4PngiJLknS5wj9opkHd6FmheX`, and a transfer in
+`95s56JvPcy81jWNJJkTx9xjT57hsPndjQXx2nKaVbsn4`. The precondition read 581 bytes of prior contract
+state before sending anything, found the empty key free, and permitted the migration. The whole
+five-step flow then ran through the interface in fixed mode with a virtual authenticator (labelled
+as such; it is not a real-device claim): the full access key was deleted in
+`4m9VSNDhkbdkbU1dSSoBggjPiZ6JXDexuvdmYgi7999J` and the self extension removed in
+`CND1rdsAGFxtzemi5BKbEHNXY4WjMAKFRGqdBTevGDVn`. After it, the chain refuses what the seed phrase
+signs, in its own words: `Access key not found: v794558571.thine-1a1a75385a8.testnet /
+ed25519:2h7sX71GGpagBhzktnpif4qua5dEFCSY7TJck6mQseCe`. The prior state survives as 581 bytes of
+orphaned storage, shown and priced on the account's view. Nothing in the flow knew the account was
+minutes old rather than years old; the chain carries no such notion, and the migration reads only
+what is on it.
+
 ### What deploying Thine costs
 
 `cargo test -p thine-bench --test thine_publish_cost`
@@ -328,10 +347,12 @@ Stated plainly, because the rest of this file is about what does work.
   extensions, and both removal transactions succeeded. Every automated run uses a virtual
   authenticator instead, and is labelled as such; one device and browser combination is what the
   real-hardware claim covers.
-- **There is no hosted demo.** The interface runs locally against a sandbox; nothing is deployed
-  for someone else to open.
-- **The interface is unstyled on purpose.** `crates/thine-web/static/index.html` is structure and
-  behaviour only. Every visual decision belongs to the designer and none is made there.
+- **The hosted demo is served from one machine.** The judge path runs against live testnet behind
+  a tunnel from the author's computer, not from hosted infrastructure. If it is unreachable, the
+  local path above reproduces everything it shows.
+- **Registering a passkey after migration is not wired in the interface.** The wallet contract
+  supports it (an existing passkey authorises the new one); the demo states this instead of
+  pretending.
 - **No mainnet deployment.** Nothing in this repository has sent a mainnet transaction.
 
 ## After the hackathon
