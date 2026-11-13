@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Thine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/tokens.css">
 <!--
-  Structure and copy follow thine-screen-prompts-2026-11-12.md. Every visual
-  value lives in tokens.css, which is a placeholder for the design system.
+  Structure and copy follow thine-screen-prompts-2026-11-12.md; every visual
+  value lives in tokens.css, which applies the Thine design system as written.
   Behaviour that predates these screens is unchanged: holders order by
   authority, removal rows come from fetched transactions and never from the
   ledger, the permanence lines gate to the irreversible step, the standing
@@ -45,7 +48,7 @@
   <p id="auth-control-line"></p>
 
   <div class="label">Who can open this account</div>
-  <div id="auth-rows"></div>
+  <div class="card" id="auth-rows"></div>
 
   <div id="auth-standing" hidden>
     <p>This account can never add a key, deploy a contract, stake natively, create a subaccount, or delete itself.</p>
@@ -112,7 +115,7 @@
   <h2>Register your passkeys</h2>
   <p>Each passkey you register can open the account. Two is the minimum, so that losing one device does not lose the account.</p>
 
-  <div id="register-rows"></div>
+  <div class="card" id="register-rows"></div>
 
   <div class="actions">
     <button id="register-another">Register another passkey</button>
@@ -127,7 +130,7 @@
   <h2>Prove each passkey works</h2>
   <p>Each passkey signs a real call to the account. Nothing changes and nothing is removed.</p>
 
-  <div id="prove-rows"></div>
+  <div class="card" id="prove-rows"></div>
 
   <div class="actions">
     <button class="primary" id="prove-continue">Continue</button>
@@ -145,13 +148,13 @@
   <div class="actions">
     <button id="final-self-hold">Remove the self hold</button>
   </div>
-  <div id="final-part1-rows"></div>
+  <div class="card" id="final-part1-rows"></div>
 
   <div id="final-part2" hidden>
     <h2>Remove the last full access key</h2>
 
     <div class="label">What will be left</div>
-    <div id="final-remains"></div>
+    <div class="card" id="final-remains"></div>
     <p class="notice" id="final-remains-notice"></p>
 
     <div id="final-permanence">

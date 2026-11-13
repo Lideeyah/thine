@@ -108,34 +108,54 @@ function holderRow(h) {
   const removed = h.status.status === 'removed';
   if (removed) row.classList.add('gone');
 
+  // Authority is encoded as fill density: solid for full access, hatched for
+  // an extension, outlined for a scoped key, faded once gone.
   const kind = h.kind.kind;
-  let value, badge, capability;
+  let value, badge, treatment, capability;
   if (kind === 'full_access_key') {
-    value = truncMiddle(h.kind.public_key, 16, 8);
+    value = h.kind.public_key;
     badge = 'Full access';
+    treatment = 'badge--full';
     capability = 'Can do anything, including delete this account';
   } else if (kind === 'function_call_key') {
-    value = truncMiddle(h.kind.public_key, 16, 8);
+    value = h.kind.public_key;
     badge = 'Function call key';
+    treatment = 'badge--scoped';
     capability = 'Calls named methods on one contract, nothing else';
   } else if (kind === 'self_extension') {
     value = S.viewing || '';
     badge = 'Extension';
+    treatment = 'badge--extension';
     capability = 'The account signing for itself; removed at the end of migration';
   } else {
     value = h.kind.account_id;
     badge = 'Extension';
+    treatment = 'badge--extension';
     capability = 'Signs for this account through a passkey';
   }
+  if (removed) treatment = 'badge--gone';
 
   const head = document.createElement('div');
   head.className = 'row-head';
   const v = document.createElement('span');
   v.className = 'value';
-  v.textContent = value;
+  // Middle truncation; the full value is a tap away.
+  v.textContent = truncMiddle(value, 16, 8);
+  v.title = value;
+  v.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(value); } catch {}
+  });
   const b = document.createElement('span');
-  b.className = 'badge';
-  b.textContent = badge;
+  b.className = `badge ${treatment}`;
+  if (treatment === 'badge--extension') {
+    // The label knocks out of the hatch on a surface plate.
+    const k = document.createElement('span');
+    k.className = 'knockout';
+    k.textContent = badge;
+    b.append(k);
+  } else {
+    b.textContent = badge;
+  }
   head.append(v, b);
   row.append(head);
 
@@ -467,7 +487,7 @@ function renderRegister() {
     v.className = 'value';
     v.textContent = `${p.name}  ${truncMiddle(p.publicKey, 12, 6)}`;
     const b = document.createElement('span');
-    b.className = 'badge';
+    b.className = 'row-state';
     head.append(v, b);
     row.append(head);
     if (p.registered) {
@@ -532,7 +552,7 @@ function renderProve() {
     v.className = 'value';
     v.textContent = `${p.name}  ${truncMiddle(p.publicKey, 12, 6)}`;
     const b = document.createElement('span');
-    b.className = 'badge';
+    b.className = 'row-state';
     head.append(v, b);
     row.append(head);
     if (p.proven) {
