@@ -176,8 +176,8 @@ plain http gives only on loopback, but it also needs a relying party id, and an 
 be one. Chrome rejects `127.0.0.1` with "This is an invalid domain", and the page says so rather
 than letting that error through.
 
-**See this:** who can open `lydia.sandbox`, the five steps with the irreversible one marked, and
-four buttons. Working down them migrates the account: your own device is asked for a passkey twice
+**See this:** who can open the account, the twelve-word seed phrase its key derives from, the five
+steps with the irreversible one marked, and the controls. Working down them migrates the account: your own device is asked for a passkey twice
 per key, once to create its account and once to prove it, and the view updates after every step.
 The last button is refused until two passkeys have each proven themselves.
 
@@ -321,12 +321,13 @@ under, the total burn, and whether the relayer can cover it.
 
 Stated plainly, because the rest of this file is about what does work.
 
-- **No passkey signature from a real authenticator has been made yet.** The browser path is built
-  and tested end to end, but the last link is untested: every test replaces the authenticator with
-  a software P-256 key. Precisely what *is* verified: the DER-to-raw conversion and low-S
-  normalisation, against a real browser assertion from NEAR's own test vector; the whole migration
-  through the real HTTP endpoints; and that Chrome accepts the `navigator.credentials.create` call
-  on `localhost` and proceeds to wait for a device. What has not happened is a human touching one.
+- **A real-device migration has been completed once.** On 13 November 2026 the author ran the
+  whole flow at the hosted demo from Chrome on a Mac, approving every signature on the machine's
+  own platform authenticator. The chain's record of that account,
+  `d555575227832.thine-1a1a75385a8.testnet`: zero access keys remain, exactly the two passkey
+  extensions, and both removal transactions succeeded. Every automated run uses a virtual
+  authenticator instead, and is labelled as such; one device and browser combination is what the
+  real-hardware claim covers.
 - **There is no hosted demo.** The interface runs locally against a sandbox; nothing is deployed
   for someone else to open.
 - **The interface is unstyled on purpose.** `crates/thine-web/static/index.html` is structure and

@@ -26,7 +26,10 @@ to the live demo.
 7. Press **Continue**, then **Remove the self hold**.
 8. When the second part appears, read the four lines, type the account id
    into the confirmation, and press **Remove last key**.
-9. The final authority view shows the account opened by your passkeys, the
+9. Press **Try the seed phrase** before step 3 and once more at the end: the
+   first answer is the chain accepting a transaction signed with the phrase,
+   the second is the chain refusing it because the key no longer exists.
+10. The final authority view shows the account opened by your passkeys, the
    removed key and the removed self hold struck through, each with the
    transaction hash that removed it. Copy either hash into
    `https://testnet.nearblocks.io/txns/<hash>` to check it on an explorer.
