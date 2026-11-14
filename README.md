@@ -3,7 +3,7 @@
 Thine moves an existing NEAR account from seed phrase control to passkey control. The account id
 stays the same and no assets move. When the migration completes, the seed phrase key has been
 removed, the account holds no full access key, and authority over it runs only through the
-registered passkeys.
+registered passkeys. The same flow works for a new account as well.
 
 A passkey signs with P-256, which is not one of NEAR's access key types. Those are ed25519,
 secp256k1 and ML-DSA-65, so a passkey's authority has to live in contract code rather than in a key
