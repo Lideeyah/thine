@@ -19,6 +19,13 @@
 //! what it is standing in for. Without one, it is a generated sub-account of
 //! the relayer.
 //!
+//!   cargo run -p thine-web --example existing_account -- enrich
+//!
+//! deepens the prepared account's history: more contract use, transfers out,
+//! and transfers in from the relayer, so its explorer page reads like an
+//! account that has been lived in rather than one set up in a single pass.
+//! Age cannot be manufactured; activity is simply performed.
+//!
 //!   cargo run -p thine-web --example existing_account -- try-seed <id> <12 words>
 //!
 //! derives the key from the phrase and submits a one yoctoNEAR self transfer,
@@ -45,8 +52,11 @@ async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("prepare") => prepare(args.get(1).map(String::as_str)).await,
+        Some("enrich") => enrich().await,
         Some("try-seed") if args.len() >= 3 => try_seed(&args[1], &args[2..].join(" ")).await,
-        _ => bail!("usage: existing_account prepare [name] | try-seed <account_id> <seed phrase>"),
+        _ => bail!(
+            "usage: existing_account prepare [name] | enrich | try-seed <account_id> <seed phrase>"
+        ),
     }
 }
 
@@ -182,6 +192,71 @@ async fn prepare(name: Option<&str>) -> Result<()> {
     println!();
     println!("key written to .thine/user-testnet.json; migrate with");
     println!("  thine-web --account {id}");
+    Ok(())
+}
+
+/// More life for the prepared account, all of it real: contract calls and
+/// outgoing transfers signed by its own key, incoming transfers from the
+/// relayer.
+async fn enrich() -> Result<()> {
+    let user_keyed: Keyed = serde_json::from_slice(
+        &std::fs::read(".thine/user-testnet.json").context("run prepare first")?,
+    )?;
+    let relayer_keyed: Keyed =
+        serde_json::from_slice(&std::fs::read(".thine/relayer-testnet.json")?)?;
+    let id: AccountId = user_keyed.account_id.parse()?;
+    let relayer_id: AccountId = relayer_keyed.account_id.parse()?;
+    let user = Near::custom(RPC.to_string(), CHAIN_ID.to_string())
+        .credentials(user_keyed.secret_key.as_str(), id.clone())
+        .context("user credentials")?
+        .build();
+    let relayer = Near::custom(RPC.to_string(), CHAIN_ID.to_string())
+        .credentials(relayer_keyed.secret_key.as_str(), relayer_id.clone())
+        .context("relayer credentials")?
+        .build();
+
+    for round in 0..4u32 {
+        let outcome = user
+            .transaction(id.clone())
+            .call("bump")
+            .gas(Gas::from_tgas(10))
+            .finish()
+            .call("put")
+            .args(serde_json::json!({
+                "key": format!("note-{round}"),
+                "value": "y".repeat(24 + 16 * round as usize),
+            }))
+            .gas(Gas::from_tgas(10))
+            .finish()
+            .wait_until::<Final>()
+            .await?;
+        if !outcome.is_success() {
+            bail!("contract use {round} failed: {:?}", outcome.status);
+        }
+        println!("contract use {}", outcome.transaction_hash());
+
+        let outcome = user
+            .transaction(relayer_id.clone())
+            .transfer(NearToken::from_millinear(3 + u128::from(round)))
+            .wait_until::<Final>()
+            .await?;
+        if !outcome.is_success() {
+            bail!("transfer out {round} failed: {:?}", outcome.status);
+        }
+        println!("sent         {}", outcome.transaction_hash());
+
+        let outcome = relayer
+            .transaction(id.clone())
+            .transfer(NearToken::from_millinear(5 + 2 * u128::from(round)))
+            .wait_until::<Final>()
+            .await?;
+        if !outcome.is_success() {
+            bail!("transfer in {round} failed: {:?}", outcome.status);
+        }
+        println!("received     {}", outcome.transaction_hash());
+    }
+    println!();
+    println!("12 more transactions on {id}");
     Ok(())
 }
 
