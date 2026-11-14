@@ -57,8 +57,33 @@ body {
 }
 
 /* type roles */
-h1 { font-size: 15px; font-weight: 500; margin: 0 0 var(--s32); }
 h2 { font-size: 19px; font-weight: 500; margin: var(--s32) 0 var(--s11); }
+
+/* --- the masthead: mark, wordmark, network, one rule --- */
+.masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: var(--s11);
+  border-bottom: 1px solid var(--rule-panel);
+  margin-bottom: var(--s32);
+}
+.brand { display: flex; align-items: center; gap: var(--s11); }
+.brand .mark { display: block; }
+.brand h1 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+  line-height: 1;
+}
+.masthead-network {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+}
 
 .display {
   font-family: var(--mono);

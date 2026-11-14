@@ -688,6 +688,7 @@ $('final-remove').addEventListener('click', async () => {
     return;
   }
   $('open-input').placeholder = S.meta.example_account;
+  $('masthead-network').textContent = S.meta.network;
   $('open-demo').hidden = !S.meta.demo;
 
   if (!S.meta.demo) {
