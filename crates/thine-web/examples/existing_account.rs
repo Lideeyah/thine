@@ -26,6 +26,15 @@
 //! account that has been lived in rather than one set up in a single pass.
 //! Age cannot be manufactured; activity is simply performed.
 //!
+//!   cargo run -p thine-web --example existing_account -- keyfile <id> <12 words>
+//!
+//! derives the account's key from a seed phrase and writes it to
+//! .thine/user-testnet.json, which is what `thine-web --account` reads. This
+//! is how someone who holds a phrase migrates their own account: locally,
+//! with the phrase never leaving their machine. Thine's hosted interface
+//! never asks for a phrase; a page that asks for twelve words is the
+//! behaviour this product exists to end.
+//!
 //!   cargo run -p thine-web --example existing_account -- try-seed <id> <12 words>
 //!
 //! derives the key from the phrase and submits a one yoctoNEAR self transfer,
@@ -53,9 +62,11 @@ async fn main() -> Result<()> {
     match args.first().map(String::as_str) {
         Some("prepare") => prepare(args.get(1).map(String::as_str)).await,
         Some("enrich") => enrich().await,
+        Some("keyfile") if args.len() >= 3 => keyfile(&args[1], &args[2..].join(" ")),
         Some("try-seed") if args.len() >= 3 => try_seed(&args[1], &args[2..].join(" ")).await,
         _ => bail!(
-            "usage: existing_account prepare [name] | enrich | try-seed <account_id> <seed phrase>"
+            "usage: existing_account prepare [name] | enrich | keyfile <account_id> <seed \
+             phrase> | try-seed <account_id> <seed phrase>"
         ),
     }
 }
@@ -257,6 +268,25 @@ async fn enrich() -> Result<()> {
     }
     println!();
     println!("12 more transactions on {id}");
+    Ok(())
+}
+
+/// The phrase-holder's door into fixed mode, entirely local.
+fn keyfile(account: &str, phrase: &str) -> Result<()> {
+    let id: AccountId = account.parse()?;
+    let secret = SecretKey::from_seed_phrase(phrase)
+        .map_err(|e| anyhow::anyhow!("deriving from the seed phrase: {e}"))?;
+    std::fs::create_dir_all(".thine")?;
+    std::fs::write(
+        ".thine/user-testnet.json",
+        serde_json::to_vec_pretty(&Keyed {
+            account_id: id.to_string(),
+            secret_key: secret.to_string(),
+        })?,
+    )?;
+    println!("key written to .thine/user-testnet.json; migrate with");
+    println!("  thine-web --account {id}");
+    println!("The phrase was used locally and sent nowhere.");
     Ok(())
 }
 

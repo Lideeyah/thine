@@ -350,6 +350,14 @@ Stated plainly, because the rest of this file is about what does work.
 - **The hosted demo is served from one machine.** The judge path runs against live testnet behind
   a tunnel from the author's computer, not from hosted infrastructure. If it is unreachable, the
   local path above reproduces everything it shows.
+- **Migrating your own account in the hosted interface is not wired.** Steps 1, 3 and 5 must be
+  signed by the account's own key, which lives in its owner's wallet, so the hosted page needs a
+  standard wallet connection; it says so plainly instead of asking for anything. Today a phrase
+  holder migrates locally: `existing_account keyfile <id> <phrase>` derives the key file without
+  the phrase leaving the machine, and `thine-web --account` runs the full flow against it. Wiring
+  the wallet connection, including wallet support for the NEP-591 action step 1 sends, is the
+  first piece of after-hackathon work. The passkey half already works from any device with a
+  platform authenticator, phones included.
 - **Registering a passkey after migration is not wired in the interface.** The wallet contract
   supports it (an existing passkey authorises the new one); the demo states this instead of
   pretending.
