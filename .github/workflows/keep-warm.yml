@@ -1,0 +1,14 @@
+# The hosted demo runs on a free instance that sleeps after idle traffic
+# stops, and waking costs the first visitor about half a minute. This ping
+# keeps it resident so a judge never pays that wait.
+name: keep-warm
+on:
+  schedule:
+    - cron: "*/8 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ping the hosted demo
+        run: curl -sS -m 60 -o /dev/null -w "%{http_code}\n" https://thine-0u9f.onrender.com/api/meta
