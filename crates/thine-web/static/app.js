@@ -116,7 +116,8 @@ function holderRow(h) {
     value = h.kind.public_key;
     badge = 'Full access';
     treatment = 'badge--full';
-    capability = 'Can do anything, including delete this account';
+    capability =
+      'The key a seed phrase or wallet controls. It can do anything, including delete this account';
   } else if (kind === 'function_call_key') {
     value = h.kind.public_key;
     badge = 'Function call key';
