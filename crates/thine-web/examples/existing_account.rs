@@ -6,13 +6,18 @@
 //! prior contract state; this tool produces the same situation on live
 //! testnet, so the record can point at transactions anyone can fetch.
 //!
-//!   cargo run -p thine-web --example existing_account -- prepare
+//!   cargo run -p thine-web --example existing_account -- prepare [name]
 //!
-//! creates an account under the relayer whose one full access key derives
-//! from a printed seed phrase, then gives it a past signed by that key: it
-//! deploys an ordinary near-sdk contract, writes state through it, and moves
-//! tokens. The key lands in .thine/user-testnet.json, which is exactly what
+//! creates an account whose one full access key derives from a printed seed
+//! phrase, then gives it a past signed by that key: it deploys an ordinary
+//! near-sdk contract, writes state through it, and moves tokens. The key
+//! lands in .thine/user-testnet.json, which is exactly what
 //! `thine-web --account` expects.
+//!
+//! With a name, the account is `name.testnet`, registered through the
+//! testnet registrar the way a wallet would register it, so it looks like
+//! what it is standing in for. Without one, it is a generated sub-account of
+//! the relayer.
 //!
 //!   cargo run -p thine-web --example existing_account -- try-seed <id> <12 words>
 //!
@@ -39,13 +44,13 @@ struct Keyed {
 async fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("prepare") => prepare().await,
+        Some("prepare") => prepare(args.get(1).map(String::as_str)).await,
         Some("try-seed") if args.len() >= 3 => try_seed(&args[1], &args[2..].join(" ")).await,
-        _ => bail!("usage: existing_account prepare | try-seed <account_id> <seed phrase>"),
+        _ => bail!("usage: existing_account prepare [name] | try-seed <account_id> <seed phrase>"),
     }
 }
 
-async fn prepare() -> Result<()> {
+async fn prepare(name: Option<&str>) -> Result<()> {
     let relayer_keyed: Keyed = serde_json::from_slice(
         &std::fs::read(".thine/relayer-testnet.json")
             .context("expected .thine/relayer-testnet.json")?,
@@ -62,24 +67,62 @@ async fn prepare() -> Result<()> {
     let secret = SecretKey::from_seed_phrase(&phrase)
         .map_err(|e| anyhow::anyhow!("deriving from the seed phrase: {e}"))?;
 
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)?
-        .as_secs();
-    let id: AccountId = format!("v{}.{relayer_id}", secs % 1_000_000_000).parse()?;
+    let id: AccountId = match name {
+        Some(n) => {
+            let full = if n.contains('.') {
+                n.to_string()
+            } else {
+                format!("{n}.testnet")
+            };
+            full.parse()?
+        }
+        None => {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs();
+            format!("v{}.{relayer_id}", secs % 1_000_000_000).parse()?
+        }
+    };
+
+    if relayer.account_exists(id.clone()).await.unwrap_or(false) {
+        bail!("{id} already exists; pick another name");
+    }
 
     println!("account      {id}");
     println!("seed phrase  {phrase}");
 
-    let outcome = relayer
-        .transaction(id.clone())
-        .create_account()
-        .transfer(FUNDING)
-        .add_full_access_key(secret.public_key())
-        .wait_until::<Final>()
-        .await
-        .context("creating the account")?;
+    // A sub-account of the relayer is created directly; a top-level
+    // `name.testnet` goes through the testnet registrar, the same call a
+    // wallet makes when someone picks a name.
+    let outcome = if id.as_str().ends_with(&format!(".{relayer_id}")) {
+        relayer
+            .transaction(id.clone())
+            .create_account()
+            .transfer(FUNDING)
+            .add_full_access_key(secret.public_key())
+            .wait_until::<Final>()
+            .await
+            .context("creating the account")?
+    } else {
+        relayer
+            .transaction("testnet".parse::<AccountId>()?)
+            .call("create_account")
+            .args(serde_json::json!({
+                "new_account_id": id.to_string(),
+                "new_public_key": secret.public_key().to_string(),
+            }))
+            .deposit(FUNDING)
+            .gas(Gas::from_tgas(100))
+            .finish()
+            .wait_until::<Final>()
+            .await
+            .context("registering the account")?
+    };
     if !outcome.is_success() {
         bail!("creating {id} failed: {:?}", outcome.status);
+    }
+    if !relayer.account_exists(id.clone()).await.unwrap_or(false) {
+        bail!("the registrar did not create {id}; the name may be reserved");
     }
     println!("created      {}", outcome.transaction_hash());
 
