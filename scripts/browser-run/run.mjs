@@ -56,11 +56,19 @@ async function waitScreen(page, name, timeout = 120000) {
   );
 }
 
+// THINE_HEADFUL=1 opens a visible window and slows the clicks enough to
+// follow, so a person can watch the whole flow happen for real.
+const headful = !!process.env.THINE_HEADFUL;
 const browser = await puppeteer.launch({
   executablePath: CHROME,
-  headless: 'new',
+  headless: headful ? false : 'new',
+  slowMo: headful ? 120 : 0,
   protocolTimeout: 420000,
-  args: ['--no-first-run', '--no-default-browser-check'],
+  args: [
+    '--no-first-run',
+    '--no-default-browser-check',
+    ...(headful ? ['--window-size=1280,960'] : []),
+  ],
 });
 
 try {
