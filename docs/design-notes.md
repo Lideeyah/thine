@@ -1,0 +1,1 @@
+Thine depends on one property: an account is an object in its own right, with its own code and its own key list, so authority over it can be replaced without replacing the account. Chains built that way can support this; chains where the address is derived from the key have no account left to keep once the key changes.
