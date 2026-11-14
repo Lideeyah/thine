@@ -340,13 +340,18 @@ under, the total burn, and whether the relayer can cover it.
 
 Stated plainly, because the rest of this file is about what does work.
 
-- **A real-device migration has been completed once.** On 13 November 2026 the author ran the
+- **A real-device migration has been completed twice.** On 13 November 2026 the author ran the
   whole flow at the hosted demo from Chrome on a Mac, approving every signature on the machine's
-  own platform authenticator. The chain's record of that account,
+  own platform authenticator; the chain's record of that account,
   `d555575227832.thine-1a1a75385a8.testnet`: zero access keys remain, exactly the two passkey
-  extensions, and both removal transactions succeeded. Every automated run uses a virtual
-  authenticator instead, and is labelled as such; one device and browser combination is what the
-  real-hardware claim covers.
+  extensions, and both removal transactions succeeded. On 14 November 2026 the author migrated
+  `lydia-solomon.testnet` the same way, an account registered through the testnet registrar that
+  carried a deployed contract, prior state and a transfer history first: the key was deleted in
+  `7Kq2xBXGteVE91t753N6NEdh8tShzhrCfTB8ehANDAZS`, the self hold removed in
+  `2WKHA1XdT6dYQXKofiDX5cC86SDGBZHujEQsu4F2k61a`, two proven passkeys remain, and the prior
+  state survives as 737 bytes of orphaned storage the view still prices. Every automated run
+  uses a virtual authenticator instead, and is labelled as such; one device and browser
+  combination is what the real-hardware claim covers.
 - **The hosted demo is served from one machine.** The judge path runs against live testnet behind
   a tunnel from the author's computer, not from hosted infrastructure. If it is unreachable, the
   local path above reproduces everything it shows.
