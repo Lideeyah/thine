@@ -5,6 +5,11 @@ stays the same and no assets move. When the migration completes, the seed phrase
 removed, the account holds no full access key, and authority over it runs only through the
 registered passkeys. The same flow works for a new account as well.
 
+**Hosted demo: <https://lideeyah.github.io/redirect/>** — live testnet. It creates a real
+practice account for you to migrate with your own device's passkeys: no wallet, no funds,
+no sign-up. It is served from one machine through a tunnel (see "What is not built yet"); if it
+is ever unreachable, everything below also runs locally (see "Try it").
+
 A passkey signs with P-256, which is not one of NEAR's access key types. Those are ed25519,
 secp256k1 and ML-DSA-65, so a passkey's authority has to live in contract code rather than in a key
 on the account. Step 1 replaces the account's code with the `wallet-no-sign` contract, in one
