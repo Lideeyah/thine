@@ -356,9 +356,9 @@ $('auth-change').addEventListener('click', async () => {
   const own = S.viewing === S.own && !!S.token;
   if (!own) {
     $('auth-notice').textContent =
-      'Changing this account needs its key, which is in its owner\'s wallet; this demo ' +
-      'holds only the keys of the throwaway accounts it creates. Create one on the start ' +
-      'screen to run the migration.';
+      'Migrating an account needs its own wallet to sign each step, and connecting a ' +
+      'wallet is not available here yet. Create a practice account on the start screen ' +
+      'and run the whole migration there with your own passkeys.';
     return;
   }
   const current = S.report.plan.steps[S.report.plan.current]?.id;
