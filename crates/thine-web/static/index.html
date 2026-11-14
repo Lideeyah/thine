@@ -67,6 +67,17 @@
   <div class="display" id="auth-id"></div>
   <p id="auth-control-line"></p>
 
+  <nav class="tabs" id="auth-tabs">
+    <button class="tab active" data-tab="authority">Authority</button>
+    <button class="tab" data-tab="activity">Activity</button>
+  </nav>
+
+  <div id="auth-tab-activity" hidden>
+    <div class="card" id="auth-activity"></div>
+    <p class="graphite small" id="auth-activity-note" hidden>Listed by an indexer. Every hash can be checked against the chain itself.</p>
+  </div>
+
+  <div id="auth-tab-authority">
   <div class="label">Who can open this account</div>
   <div class="card" id="auth-rows"></div>
 
@@ -90,6 +101,7 @@
   </div>
 
   <p class="graphite small" id="auth-orphaned"></p>
+  </div>
 
   <div class="actions" id="auth-actions">
     <button class="primary" id="auth-change">Change the lock</button>

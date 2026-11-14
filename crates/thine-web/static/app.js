@@ -185,6 +185,65 @@ function holderRow(h) {
   return row;
 }
 
+// The account's past, from the server's indexer proxy. Display: the holder
+// rows and removals never depend on it, and when the read fails the section
+// is simply absent.
+async function loadActivity(accountId) {
+  const list = $('auth-activity');
+  list.textContent = '';
+  $('auth-activity-note').hidden = true;
+  let out;
+  try {
+    out = await api(`/api/history/${accountId}`);
+  } catch {
+    // No indexer, or unreachable: said plainly, never guessed.
+    note('The indexer could not be reached just now, so no activity is listed.');
+    return;
+  }
+  if (S.viewing !== accountId) return;
+  if (!out.rows.length) {
+    note('The indexer lists no transactions for this account.');
+    return;
+  }
+  for (const r of out.rows.slice(0, 15)) {
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    const head = document.createElement('div');
+    head.className = 'row-head';
+    const what = document.createElement('span');
+    what.className = 'activity-what';
+    what.textContent = r.what;
+    const when = document.createElement('span');
+    when.className = 'activity-when';
+    when.textContent = r.when.replace('T', ' ').replace('Z', ' UTC');
+    head.append(what, when);
+    const detail = document.createElement('div');
+    detail.className = 'activity-hash';
+    const hash = document.createElement('span');
+    hash.textContent = truncMiddle(r.hash, 14, 6);
+    hash.title = r.hash;
+    hash.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(r.hash); } catch {}
+    });
+    detail.append(hash);
+    if (r.counterparty && r.counterparty !== S.viewing) {
+      const cp = document.createElement('span');
+      cp.textContent = truncMiddle(r.counterparty, 22, 8);
+      cp.title = r.counterparty;
+      detail.append(document.createTextNode('   '), cp);
+    }
+    row.append(head, detail);
+    list.append(row);
+  }
+  note('Listed by an indexer. Every hash can be checked against the chain itself.');
+
+  function note(text) {
+    const n = $('auth-activity-note');
+    n.textContent = text;
+    n.hidden = false;
+  }
+}
+
 function controlLine(stage) {
   if (stage === 'seed_controlled')
     return 'Opened by a seed phrase. Anyone holding those words holds the account.';
@@ -201,6 +260,7 @@ function controlLine(stage) {
 async function openAuthority(accountId) {
   S.viewing = accountId;
   show('authority');
+  selectAuthTab('authority');
   $('auth-id').textContent = accountId;
   $('auth-control-line').textContent = '';
   $('auth-notice').textContent = '';
@@ -262,6 +322,9 @@ function renderAuthority() {
 
   syncPasskeysFromReport();
   saveLocal();
+
+  // The past loads alongside the holders, never blocking them.
+  loadActivity(S.viewing);
 }
 
 function syncPasskeysFromReport() {
@@ -274,6 +337,17 @@ function syncPasskeysFromReport() {
       if (h.status.status === 'proven') p.proven = true;
     }
   }
+}
+
+function selectAuthTab(name) {
+  for (const t of document.querySelectorAll('#auth-tabs .tab')) {
+    t.classList.toggle('active', t.dataset.tab === name);
+  }
+  $('auth-tab-authority').hidden = name !== 'authority';
+  $('auth-tab-activity').hidden = name !== 'activity';
+}
+for (const t of document.querySelectorAll('#auth-tabs .tab')) {
+  t.addEventListener('click', () => selectAuthTab(t.dataset.tab));
 }
 
 $('auth-back').addEventListener('click', () => show('open'));

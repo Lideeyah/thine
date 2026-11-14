@@ -26,6 +26,7 @@
 //! a visitor starts a fresh one.
 
 pub mod api;
+pub mod history;
 pub mod session;
 
 use std::{
@@ -123,6 +124,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/meta", get(api::meta))
         .route("/api/inspect/{account_id}", get(api::inspect))
+        .route("/api/history/{account_id}", get(history::history))
         .route("/api/session", post(api::open_session))
         .route("/api/try-seed", post(api::try_seed))
         .route("/api/account", get(api::account))

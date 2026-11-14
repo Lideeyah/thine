@@ -55,10 +55,16 @@ pub fn near_of(yocto: u128) -> f64 {
 
 /// An RFC 3339 timestamp, for local records. Display only; never trusted.
 pub fn now_rfc3339() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    rfc3339_of(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    )
+}
+
+/// RFC 3339 for a given Unix time, same display-only caveat.
+pub fn rfc3339_of(secs: u64) -> String {
     let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
     let z = days + 719_468;
     let era = z.div_euclid(146_097);

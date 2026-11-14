@@ -156,6 +156,46 @@ p { margin: var(--s7) 0; }
   white-space: nowrap;
 }
 
+/* --- tabs: authority and activity, one rule, the active tab inked --- */
+.tabs {
+  display: flex;
+  gap: var(--s18);
+  border-bottom: 1px solid var(--rule-panel);
+  margin: var(--s18) 0 var(--s14);
+}
+.tabs .tab {
+  border: none;
+  background: none;
+  border-radius: 0;
+  padding: 0 0 var(--s7);
+  margin-bottom: -1px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  border-bottom: 1px solid transparent;
+}
+.tabs .tab.active {
+  color: var(--graphite);
+  border-bottom-color: var(--graphite);
+}
+
+/* --- activity rows: the account's past, inside the product --- */
+.activity-what { font-size: 13px; min-width: 0; }
+.activity-what .counterparty { font-family: var(--mono); font-size: 11px; }
+.activity-when {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.activity-hash {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+  margin-top: var(--s4);
+  cursor: pointer;
+}
+
 /* --- the authority badge: fill density, not hue --- */
 .badge {
   font-size: 10px;

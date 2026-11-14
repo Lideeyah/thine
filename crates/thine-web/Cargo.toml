@@ -20,6 +20,7 @@ thine-core = { path = "../thine-core" }
 
 defuse-wallet-sdk = { workspace = true }
 near-kit = { workspace = true }
+reqwest = { workspace = true }
 
 anyhow = { workspace = true }
 bip39 = { workspace = true }
