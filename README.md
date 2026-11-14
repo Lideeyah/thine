@@ -5,10 +5,10 @@ stays the same and no assets move. When the migration completes, the seed phrase
 removed, the account holds no full access key, and authority over it runs only through the
 registered passkeys. The same flow works for a new account as well.
 
-**Hosted demo: <https://lideeyah.github.io/redirect/>** — live testnet. It creates a real
+**Hosted demo: <https://thine-0u9f.onrender.com>** — live testnet. It creates a real
 practice account for you to migrate with your own device's passkeys: no wallet, no funds,
-no sign-up. It is served from one machine through a tunnel (see "What is not built yet"); if it
-is ever unreachable, everything below also runs locally (see "Try it").
+no sign-up. It sleeps when idle, so the first visit can take half a minute to wake; if it is
+ever unreachable, everything below also runs locally (see "Try it").
 
 A passkey signs with P-256, which is not one of NEAR's access key types. Those are ed25519,
 secp256k1 and ML-DSA-65, so a passkey's authority has to live in contract code rather than in a key
@@ -357,9 +357,10 @@ Stated plainly, because the rest of this file is about what does work.
   state survives as 737 bytes of orphaned storage the view still prices. Every automated run
   uses a virtual authenticator instead, and is labelled as such; one device and browser
   combination is what the real-hardware claim covers.
-- **The hosted demo is served from one machine.** The judge path runs against live testnet behind
-  a tunnel from the author's computer, not from hosted infrastructure. If it is unreachable, the
-  local path above reproduces everything it shows.
+- **The hosted demo runs on a free single instance.** The judge path runs against live testnet
+  from one small container that sleeps when idle and takes about half a minute to wake; sessions
+  live in its memory, so a restart forgets them mid-flow. If it is unreachable, the local path
+  above reproduces everything it shows.
 - **Migrating your own account in the hosted interface is not wired.** Steps 1, 3 and 5 must be
   signed by the account's own key, which lives in its owner's wallet, so the hosted page needs a
   standard wallet connection; it says so plainly instead of asking for anything. Today a phrase
