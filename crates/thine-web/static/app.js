@@ -356,7 +356,9 @@ $('auth-change').addEventListener('click', async () => {
   const own = S.viewing === S.own && !!S.token;
   if (!own) {
     $('auth-notice').textContent =
-      'This demo migrates its own throwaway account. Create one on the start screen.';
+      'Changing this account needs its key, which is in its owner\'s wallet; this demo ' +
+      'holds only the keys of the throwaway accounts it creates. Create one on the start ' +
+      'screen to run the migration.';
     return;
   }
   const current = S.report.plan.steps[S.report.plan.current]?.id;
